@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <title>健身動作評分</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-exercise="squat">深蹲</button>
+      <button class="tab" data-exercise="pushup">伏地挺身</button>
+    </div>
+    <button id="flip" class="icon-btn" title="切換前後鏡頭">⟲</button>
+  </header>
+
+  <main id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+
+    <div id="hud" hidden>
+      <div class="count"><span id="count">0</span><small>下</small></div>
+      <div class="metrics">
+        <div><span id="key-label">膝角</span><b id="key-angle">–</b></div>
+        <div id="extra"></div>
+        <div><span>上一下最低</span><b id="last-min">–</b></div>
+      </div>
+      <div id="hint" class="hint"></div>
+      <div class="meta"><span id="side"></span> · <span id="fps"></span></div>
+    </div>
+
+    <div id="start-panel" class="panel">
+      <h1>健身動作評分</h1>
+      <p>請把手機放在地上或靠牆，<b>從側面拍攝</b>，讓全身都在畫面裡。</p>
+      <button id="start" class="primary">開啟鏡頭</button>
+      <label class="secondary">
+        或用影片測試
+        <input id="file" type="file" accept="video/*" hidden>
+      </label>
+      <p id="status" class="status"></p>
+    </div>
+  </main>
+
+  <footer class="bar">
+    <button id="reset">重新計次</button>
+    <label class="toggle"><input id="voice" type="checkbox" checked> 語音報數</label>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
