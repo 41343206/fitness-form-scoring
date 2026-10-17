@@ -55,8 +55,47 @@ export function angleFromVertical(a, b) {
   return (Math.atan2(Math.abs(dx), Math.abs(dy)) * 180) / Math.PI;
 }
 
+// a→b 連線與水平線的夾角（度），0 = 完全水平
+export function angleFromHorizontal(a, b) {
+  return 90 - angleFromVertical(a, b);
+}
+
+// 身體大小：軀幹＋大腿＋小腿長度總和。深蹲時身體折起來，這個值也幾乎不變，
+// 所以可以拿來判斷人有沒有走近或走遠鏡頭
+export function bodyScale(j) {
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  return d(j.shoulder, j.hip) + d(j.hip, j.knee) + d(j.knee, j.ankle);
+}
+
+// 開始計次時記下的位置與大小；人移動太多（走去拿手機、走離定位）就視為離開
+export function stillInPlace(anchor, j, { maxScaleChange = 0.3, maxShift = 0.5 } = {}) {
+  const scale = bodyScale(j);
+  const scaleChange = Math.abs(scale / anchor.scale - 1);
+  const shift = Math.abs(j.hip.x - anchor.x) / anchor.scale;
+  return scaleChange <= maxScaleChange && shift <= maxShift;
+}
+
 export function minVisibility(...points) {
   return Math.min(...points.map((p) => p.v));
+}
+
+// 條件要連續成立 holdMs 才回傳 true；中間只要一幀不成立就重新計時
+export class HoldTimer {
+  constructor(holdMs) {
+    this.holdMs = holdMs;
+    this.since = null;
+  }
+  update(condition, timestamp) {
+    if (!condition) {
+      this.since = null;
+      return false;
+    }
+    if (this.since === null) this.since = timestamp;
+    return timestamp - this.since >= this.holdMs;
+  }
+  reset() {
+    this.since = null;
+  }
 }
 
 // 指數移動平均，用來減少關節點抖動

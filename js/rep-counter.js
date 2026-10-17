@@ -15,6 +15,19 @@ export class RepCounter {
     this.current = null; // 目前這一下的資料
   }
 
+  // 已確認使用者在預備姿勢（站直 / 撐起），直接從「上」開始
+  start() {
+    this.state = 'up';
+    this.current = null;
+  }
+
+  // 姿勢不對或看不清楚時，丟掉進行到一半的這一下
+  // 之後要先回到「上」才會開始下一下，避免從一半開始算
+  cancel() {
+    this.current = null;
+    this.state = 'waiting';
+  }
+
   // 每一幀呼叫一次；完成一下時回傳該次的資料，否則回傳 null
   update(keyAngle, timestamp, frame = {}) {
     if (!Number.isFinite(keyAngle)) return null;

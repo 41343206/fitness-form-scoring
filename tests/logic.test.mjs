@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { angle, angleFromVertical, Smoother } from '../js/pose-math.js';
+import { angle, angleFromVertical, Smoother, HoldTimer, bodyScale, stillInPlace } from '../js/pose-math.js';
+import { EXERCISES } from '../js/exercises.js';
 import { RepCounter } from '../js/rep-counter.js';
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
@@ -78,4 +79,64 @@ test('RepCounter：太快的晃動（小於 minRepMs）不算', () => {
   const c = new RepCounter({ downAngle: 100, upAngle: 160, minRepMs: 400 });
   run(c, [170, 150, 90, 170]); // 約 100ms
   assert.equal(c.count, 0);
+});
+
+test('RepCounter：cancel 後要先回到「上」才會開始下一下', () => {
+  const c = new RepCounter({ downAngle: 100, upAngle: 160 });
+  c.start();
+  run(c, [150, 120, 95]); // 蹲到一半姿勢跑掉
+  c.cancel();
+  run(c, [90, 120, 165], 1000); // 從底部直接站起來，不算
+  assert.equal(c.count, 0);
+  run(c, rep(85), 2000); // 之後完整的一下才算
+  assert.equal(c.count, 1);
+});
+
+test('HoldTimer：要連續成立才觸發，中斷就重算', () => {
+  const t = new HoldTimer(1000);
+  assert.equal(t.update(true, 0), false);
+  assert.equal(t.update(true, 900), false);
+  assert.equal(t.update(false, 950), false);
+  assert.equal(t.update(true, 1000), false);
+  assert.equal(t.update(true, 2000), true);
+});
+
+// 側面站立的關節點（像素），scale 用來模擬走近或走遠鏡頭
+function standing({ x = 300, scale = 1 } = {}) {
+  const p = (dx, y) => ({ x: x + dx * scale, y: 100 + y * scale, v: 1 });
+  return {
+    ear: p(0, -40), shoulder: p(0, 0), elbow: p(0, 80), wrist: p(0, 150),
+    hip: p(0, 160), knee: p(0, 320), ankle: p(0, 480), heel: p(-10, 490), footIndex: p(30, 490),
+  };
+}
+
+test('stillInPlace：原地不動算在定位，走近鏡頭或走開就不算', () => {
+  const j0 = standing();
+  const anchor = { x: j0.hip.x, scale: bodyScale(j0) };
+  assert.ok(stillInPlace(anchor, standing({ x: 330 })));
+  assert.ok(!stillInPlace(anchor, standing({ scale: 1.5 })), '走近鏡頭');
+  assert.ok(!stillInPlace(anchor, standing({ x: 600 })), '走離定位');
+});
+
+test('深蹲：站直才算預備姿勢，躺著或彎腰不算', () => {
+  const ex = EXERCISES.squat;
+  const m = ex.measure(standing());
+  assert.ok(ex.ready(m) && ex.valid(m));
+
+  // 彎腰撿手機：上半身幾乎水平
+  const bend = standing();
+  bend.shoulder = { x: bend.hip.x + 150, y: bend.hip.y + 10, v: 1 };
+  assert.ok(!ex.valid(ex.measure(bend)));
+});
+
+test('伏地挺身：身體水平且手臂打直才算預備姿勢；站著不算', () => {
+  const ex = EXERCISES.pushup;
+  const p = (x, y) => ({ x, y, v: 1 });
+  const plank = {
+    ear: p(80, 300), shoulder: p(100, 310), elbow: p(100, 380), wrist: p(100, 450),
+    hip: p(260, 330), knee: p(380, 345), ankle: p(500, 360), heel: p(505, 350), footIndex: p(500, 380),
+  };
+  const m = ex.measure(plank);
+  assert.ok(ex.ready(m) && ex.valid(m));
+  assert.ok(!ex.valid(ex.measure(standing())), '站著時不是伏地挺身');
 });

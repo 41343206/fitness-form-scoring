@@ -8,45 +8,67 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="bar">
-    <div class="tabs" role="tablist">
-      <button class="tab active" data-exercise="squat">深蹲</button>
-      <button class="tab" data-exercise="pushup">伏地挺身</button>
-    </div>
-    <button id="flip" class="icon-btn" title="切換前後鏡頭">⟲</button>
-  </header>
-
-  <main id="stage">
-    <video id="video" playsinline muted></video>
-    <canvas id="overlay"></canvas>
-
-    <div id="hud" hidden>
-      <div class="count"><span id="count">0</span><small>下</small></div>
-      <div class="metrics">
-        <div><span id="key-label">膝角</span><b id="key-angle">–</b></div>
-        <div id="extra"></div>
-        <div><span>上一下最低</span><b id="last-min">–</b></div>
-      </div>
-      <div id="hint" class="hint"></div>
-      <div class="meta"><span id="side"></span> · <span id="fps"></span></div>
-    </div>
-
-    <div id="start-panel" class="panel">
+  <!-- 第一頁：選擇動作 -->
+  <section id="page-select" class="page">
+    <header class="select-header">
       <h1>健身動作評分</h1>
-      <p>請把手機放在地上或靠牆，<b>從側面拍攝</b>，讓全身都在畫面裡。</p>
-      <button id="start" class="primary">開啟鏡頭</button>
-      <label class="secondary">
-        或用影片測試
-        <input id="file" type="file" accept="video/*" hidden>
-      </label>
-      <p id="status" class="status"></p>
+      <p>選擇要做的動作</p>
+    </header>
+    <div class="cards">
+      <button class="card" data-exercise="squat">
+        <span class="card-title">深蹲</span>
+        <span class="card-desc">判斷膝角、軀幹前傾</span>
+      </button>
+      <button class="card" data-exercise="pushup">
+        <span class="card-title">伏地挺身</span>
+        <span class="card-desc">判斷肘角、身體是否成一直線</span>
+      </button>
     </div>
-  </main>
+    <p id="model-status" class="status"></p>
+  </section>
 
-  <footer class="bar">
-    <button id="reset">重新計次</button>
-    <label class="toggle"><input id="voice" type="checkbox" checked> 語音報數</label>
-  </footer>
+  <!-- 第二頁：錄影與計次 -->
+  <section id="page-workout" class="page" hidden>
+    <header class="bar">
+      <button id="back" class="icon-btn" aria-label="返回">←</button>
+      <h2 id="workout-title">深蹲</h2>
+      <button id="flip" class="icon-btn" aria-label="切換前後鏡頭">⟲</button>
+    </header>
+
+    <main id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+
+      <div id="hud">
+        <div class="count"><span id="count">0</span><small>下</small></div>
+        <div class="metrics">
+          <div><span id="key-label">膝角</span><b id="key-angle">–</b></div>
+          <div id="extra"></div>
+          <div><span>上一下最低</span><b id="last-min">–</b></div>
+        </div>
+        <div id="hint" class="hint"></div>
+        <div class="meta"><span id="side"></span> <span id="fps"></span></div>
+      </div>
+
+      <div id="center" class="center" hidden></div>
+
+      <div id="camera-panel" class="panel">
+        <ul id="tips" class="tips"></ul>
+        <button id="open-camera" class="primary">開啟鏡頭</button>
+        <label class="secondary">
+          或用影片測試
+          <input id="file" type="file" accept="video/*" hidden>
+        </label>
+        <p id="status" class="status"></p>
+      </div>
+    </main>
+
+    <footer class="bar">
+      <label class="toggle"><input id="voice" type="checkbox" checked> 語音</label>
+      <button id="go" class="primary" disabled>開始</button>
+      <span class="bar-spacer"></span>
+    </footer>
+  </section>
 
   <script type="module" src="js/main.js"></script>
 </body>
