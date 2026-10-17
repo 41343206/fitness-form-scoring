@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { angle, angleFromVertical, Smoother, HoldTimer, bodyScale, stillInPlace } from '../js/pose-math.js';
+import { angle, angleFromVertical, Smoother, HoldTimer, placement } from '../js/pose-math.js';
 import { EXERCISES } from '../js/exercises.js';
 import { RepCounter } from '../js/rep-counter.js';
 
@@ -110,12 +110,16 @@ function standing({ x = 300, scale = 1 } = {}) {
   };
 }
 
-test('stillInPlace：原地不動算在定位，走近鏡頭或走開就不算', () => {
-  const j0 = standing();
-  const anchor = { x: j0.hip.x, scale: bodyScale(j0) };
-  assert.ok(stillInPlace(anchor, standing({ x: 330 })));
-  assert.ok(!stillInPlace(anchor, standing({ scale: 1.5 })), '走近鏡頭');
-  assert.ok(!stillInPlace(anchor, standing({ x: 600 })), '走離定位');
+test('placement：在框內為 ok，太近、太遠、偏出框都會判斷出來', () => {
+  const box = { x: 150, y: 20, w: 300, h: 600 };
+  const opts = { axis: 'v', fillRange: [0.45, 0.85] };
+  // standing() 的 bodyScale = 480，框高 600 → fill 0.8
+  assert.equal(placement(standing({ x: 300 }), box, opts).status, 'ok');
+  assert.equal(placement(standing({ x: 300, scale: 1.4 }), box, opts).status, 'tooClose');
+  assert.equal(placement(standing({ x: 300, scale: 0.5 }), box, opts).status, 'tooFar');
+  const off = placement(standing({ x: 480 }), box, opts);
+  assert.equal(off.status, 'off');
+  assert.equal(off.dx, -1, '人在框右邊外面，要往左移');
 });
 
 test('深蹲：站直才算預備姿勢，躺著或彎腰不算', () => {

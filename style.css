@@ -178,3 +178,17 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   background: var(--bg);
 }
 .tips { margin: 0 0 8px; padding: 0; list-style: none; color: var(--muted); line-height: 1.8; text-align: center; }
+
+/* 整個畫面外圈的狀態顏色：紅＝位置不對、黃＝在框內等預備姿勢、綠＝可以開始 / 計次中 */
+#stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 12px solid transparent;
+  transition: border-color 0.2s;
+}
+#stage[data-state="bad"]::after { border-color: var(--danger); }
+#stage[data-state="wait"]::after { border-color: var(--warn); }
+#stage[data-state="good"]::after,
+#stage[data-state="active"]::after { border-color: var(--accent); }

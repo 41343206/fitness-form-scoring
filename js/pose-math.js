@@ -67,12 +67,36 @@ export function bodyScale(j) {
   return d(j.shoulder, j.hip) + d(j.hip, j.knee) + d(j.knee, j.ankle);
 }
 
-// 開始計次時記下的位置與大小；人移動太多（走去拿手機、走離定位）就視為離開
-export function stillInPlace(anchor, j, { maxScaleChange = 0.3, maxShift = 0.5 } = {}) {
-  const scale = bodyScale(j);
-  const scaleChange = Math.abs(scale / anchor.scale - 1);
-  const shift = Math.abs(j.hip.x - anchor.x) / anchor.scale;
-  return scaleChange <= maxScaleChange && shift <= maxShift;
+// 判斷人是否站在定位框內。
+// box：{ x, y, w, h }（像素）；axis：身體沿哪個方向延伸（'v' 站立、'h' 趴著）；
+// fillRange：身體大小（bodyScale）佔框長邊的合理範圍。
+// joints：哪些關節要在框內（深蹲時手可能往前伸，不一定要算進去）。
+// 回傳 status：
+//   'ok'        在框內、大小剛好
+//   'tooClose'  太靠近鏡頭（身體比框大）
+//   'tooFar'    離鏡頭太遠（身體太小）
+//   'off'       有部分身體跑出框外，dx / dy 是要移動的方向（以畫面座標，-1 / 0 / 1）
+export function placement(j, box, { axis = 'v', fillRange = [0.5, 0.9], margin = 0.04, joints = Object.keys(j) } = {}) {
+  const pts = joints.map((name) => j[name]);
+  const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
+  const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
+  const fill = bodyScale(j) / (axis === 'v' ? box.h : box.w);
+
+  const mx = box.w * margin, my = box.h * margin;
+  const outLeft = minX < box.x - mx, outRight = maxX > box.x + box.w + mx;
+  const outTop = minY < box.y - my, outBottom = maxY > box.y + box.h + my;
+
+  let status = 'ok';
+  if (fill > fillRange[1] || (outLeft && outRight) || (outTop && outBottom)) status = 'tooClose';
+  else if (outLeft || outRight || outTop || outBottom) status = 'off';
+  else if (fill < fillRange[0]) status = 'tooFar';
+
+  return {
+    status,
+    fill,
+    dx: outLeft ? 1 : outRight ? -1 : 0,
+    dy: outTop ? 1 : outBottom ? -1 : 0,
+  };
 }
 
 export function minVisibility(...points) {

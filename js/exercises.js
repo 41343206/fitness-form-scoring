@@ -11,8 +11,18 @@ export const EXERCISES = {
     keyLabel: '膝角',
     downAngle: 100,
     upAngle: 160,
-    tips: ['手機放地上或靠牆，從側面拍', '全身都要入鏡，包含腳'],
+    tips: ['手機直放在地上或靠牆，從側面拍', '站進畫面中的框框，框變綠就會自動開始'],
     readyHint: '請側身站直，準備開始',
+    orientation: 'portrait',
+    axis: 'v',
+    boxJoints: ['ear', 'shoulder', 'hip', 'knee', 'ankle', 'heel', 'footIndex'],
+    fillRange: [0.45, 0.85],
+    // 直立的框：高度佔畫面 86%，寬度是高度的一半
+    box(w, h) {
+      const bh = h * 0.86;
+      const bw = Math.min(w * 0.9, bh * 0.55);
+      return { x: (w - bw) / 2, y: (h - bh) / 2, w: bw, h: bh };
+    },
     measure(j) {
       const lean = angleFromVertical(j.hip, j.shoulder);
       return {
@@ -39,8 +49,18 @@ export const EXERCISES = {
     keyLabel: '肘角',
     downAngle: 100,
     upAngle: 150,
-    tips: ['手機放地上，從側面拍', '頭到腳都要入鏡'],
+    tips: ['手機橫放在地上，從側面拍', '趴進畫面中的框框，框變綠就會自動開始'],
     readyHint: '請撐起身體，手臂打直',
+    orientation: 'landscape',
+    axis: 'h',
+    boxJoints: ['ear', 'shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle', 'footIndex'],
+    fillRange: [0.45, 0.9],
+    // 橫的框：寬度佔畫面 90%，高度是寬度的 45%，位置偏下（人趴在地上）
+    box(w, h) {
+      const bw = w * 0.9;
+      const bh = Math.min(h * 0.8, bw * 0.45);
+      return { x: (w - bw) / 2, y: h - bh - h * 0.06, w: bw, h: bh };
+    },
     measure(j) {
       const bodyLine = angle(j.shoulder, j.hip, j.ankle);
       return {
