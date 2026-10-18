@@ -6,7 +6,8 @@
 
 | 檔案 | 內容 |
 |---|---|
-| `index.html`、`style.css` | 手機版畫面 |
+| `index.html`、`style.css` | 手機版畫面（首頁動作卡片、錄影頁） |
+| `img/` | 首頁動作示意圖（SVG） |
 | `js/main.js` | 鏡頭/影片、MediaPipe 推論、畫骨架、更新畫面 |
 | `js/pose-math.js` | 關節點編號、角度計算、選擇側面、平滑 |
 | `js/rep-counter.js` | 計次狀態機（含緩衝區，避免抖動重複計次） |

@@ -50,25 +50,55 @@ button:disabled { opacity: 0.4; cursor: default; }
 .status { font-size: 14px; color: var(--muted); text-align: center; margin: 0; }
 
 /* 第一頁 */
-#page-select { padding: 0 16px; padding-top: max(24px, env(safe-area-inset-top)); }
-.select-header h1 { margin: 24px 0 4px; font-size: 28px; }
-.select-header p { margin: 0 0 24px; color: var(--muted); }
-.cards { display: flex; flex-direction: column; gap: 14px; }
+#page-select {
+  background: #000;
+  padding: 0 20px;
+  padding-top: max(20px, env(safe-area-inset-top));
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+.select-header h1 { margin: 28px 0 28px; font-size: 32px; font-weight: 800; letter-spacing: 1px; }
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 28px;
+}
 .card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 22px 20px;
-  background: var(--card);
-  border: 1px solid #2c2c2c;
-  border-radius: 16px;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
   text-align: left;
 }
-.card:active { border-color: var(--accent); }
-.card-title { font-size: 22px; font-weight: 700; }
-.card-desc { font-size: 14px; color: var(--muted); }
-#model-status { margin-top: 20px; }
+.card-media {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  border: 2px solid #2b2b2b;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b0b0b;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card:active .card-media { border-color: var(--accent); transform: scale(0.98); }
+.chip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(40, 40, 40, 0.85);
+  font-size: 14px;
+  color: var(--fg);
+}
+.card-title { margin: 14px 4px 0; font-size: 22px; font-weight: 500; }
+.card-desc { margin: 4px 4px 0; font-size: 16px; color: var(--muted); }
+#model-status { margin-top: 24px; }
 
 /* 第二頁 */
 .bar {
