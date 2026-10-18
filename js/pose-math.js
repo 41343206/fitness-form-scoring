@@ -29,6 +29,57 @@ export function sideJoints(landmarks, side, width, height) {
   return out;
 }
 
+// 同一側的 3D 世界座標（MediaPipe worldLandmarks，單位公尺，原點在兩髖中點，
+// 軸向和畫面一致：x 向右、y 向下、z 朝鏡頭外）。
+// 3D 角度不會因為手機沒有正對側面而變形；拍攝角度偏的時候改用這組座標算（見 weight3D）。
+// 可見度沿用 2D 關節點的值。
+export function worldJoints(world, landmarks, side) {
+  const out = {};
+  for (const name of SIDE_JOINTS) {
+    const i = LM[side + name];
+    const p = world[i];
+    out[name[0].toLowerCase() + name.slice(1)] = {
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      v: landmarks[i].visibility ?? p.visibility ?? 1,
+    };
+  }
+  return out;
+}
+
+// 拍攝角度：0° = 正側面，90° = 正面或背面。
+// 用左右肩、左右髖的連線方向判斷：正側面時這條線指向鏡頭（z 方向），正面時是左右方向（x 方向）。
+export function viewAngle(world) {
+  const axis = (l, r) => ({ x: world[r].x - world[l].x, z: world[r].z - world[l].z });
+  const s = axis(LM.leftShoulder, LM.rightShoulder);
+  const h = axis(LM.leftHip, LM.rightHip);
+  const x = Math.abs(s.x) + Math.abs(h.x);
+  const z = Math.abs(s.z) + Math.abs(h.z);
+  return (Math.atan2(x, z) * 180) / Math.PI;
+}
+
+// 2D 與 3D 角度的混合比例。
+// 正側面時 2D 最準（MediaPipe 的深度 z 是估計值，會有誤差）；拍攝角度越偏，2D 投影變形越大，改用 3D。
+// 拍攝角度 ≤ 15° 全用 2D，≥ 45° 全用 3D，中間線性過渡。
+export function weight3D(view, from = 15, to = 45) {
+  if (view === null || view === undefined || !Number.isFinite(view)) return 0;
+  return Math.min(1, Math.max(0, (view - from) / (to - from)));
+}
+
+// 把兩次 measure 的結果依比例混合：數值欄位（含 extra）取加權平均，
+// 其他欄位（可見度、上下位置的判斷）沿用 2D 的結果
+export function blendMeasures(m2, m3, w) {
+  if (!m3 || w <= 0) return m2;
+  const mix = (a, b) => (Number.isFinite(a) && Number.isFinite(b) ? (1 - w) * a + w * b : a);
+  const out = { ...m2, extra: { ...m2.extra } };
+  for (const [k, v] of Object.entries(m2)) {
+    if (k !== 'visibility' && typeof v === 'number') out[k] = mix(v, m3[k]);
+  }
+  for (const k of Object.keys(out.extra)) out.extra[k] = mix(m2.extra[k], m3.extra?.[k]);
+  return out;
+}
+
 // 側拍時選擇比較靠近鏡頭（可見度較高）的那一側
 export function pickSide(landmarks) {
   const avg = (side) => {
@@ -38,21 +89,22 @@ export function pickSide(landmarks) {
   return avg('left') >= avg('right') ? 'left' : 'right';
 }
 
-// a-b-c 在 b 點的夾角（度）
+// a-b-c 在 b 點的夾角（度）；有 z 就算 3D 夾角
 export function angle(a, b, c) {
-  const abx = a.x - b.x, aby = a.y - b.y;
-  const cbx = c.x - b.x, cby = c.y - b.y;
-  const dot = abx * cbx + aby * cby;
-  const mag = Math.hypot(abx, aby) * Math.hypot(cbx, cby);
+  const abx = a.x - b.x, aby = a.y - b.y, abz = (a.z ?? 0) - (b.z ?? 0);
+  const cbx = c.x - b.x, cby = c.y - b.y, cbz = (c.z ?? 0) - (b.z ?? 0);
+  const dot = abx * cbx + aby * cby + abz * cbz;
+  const mag = Math.hypot(abx, aby, abz) * Math.hypot(cbx, cby, cbz);
   if (mag === 0) return NaN;
   const cos = Math.min(1, Math.max(-1, dot / mag));
   return (Math.acos(cos) * 180) / Math.PI;
 }
 
-// a→b 連線與垂直線的夾角（度），0 = 完全直立
+// a→b 連線與垂直線的夾角（度），0 = 完全直立；有 z 就把前後方向也算進水平分量，
+// 所以人繞著垂直軸轉（手機沒對準側面）時結果不變
 export function angleFromVertical(a, b) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  return (Math.atan2(Math.abs(dx), Math.abs(dy)) * 180) / Math.PI;
+  const dx = b.x - a.x, dy = b.y - a.y, dz = (b.z ?? 0) - (a.z ?? 0);
+  return (Math.atan2(Math.hypot(dx, dz), Math.abs(dy)) * 180) / Math.PI;
 }
 
 // a→b 連線與水平線的夾角（度），0 = 完全水平

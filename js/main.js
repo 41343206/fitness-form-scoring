@@ -1,11 +1,12 @@
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
-import { pickSide, sideJoints, Smoother, HoldTimer, placement } from './pose-math.js';
+import { pickSide, sideJoints, worldJoints, viewAngle, weight3D, blendMeasures, Smoother, HoldTimer, placement } from './pose-math.js';
 import { RepCounter } from './rep-counter.js';
 import { EXERCISES } from './exercises.js';
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const MIN_VISIBILITY = 0.5;
+const MAX_VIEW_ANGLE = 60; // 拍攝角度偏離正側面超過這個值才提醒側身（不擋計次）
 const READY_HOLD_MS = 1000; // 在框內擺好預備姿勢要維持多久才開始計次
 const INVALID_CANCEL_MS = 500; // 離開框或姿勢不對超過這麼久，丟掉進行中的這一下
 const INVALID_PAUSE_MS = 3000; // 超過這麼久就暫停，要重新進框擺好姿勢才繼續
@@ -260,15 +261,20 @@ function handleResult(result, now) {
   const ex = EXERCISES[exerciseId];
   const box = ex.box(w, h);
   const lms = result.landmarks?.[0];
+  const world = result.worldLandmarks?.[0];
 
   // 計次中鎖定一側，避免左右判斷跳來跳去造成角度突變
   const side = lms ? lockedSide ?? pickSide(lms) : null;
   let m = null, joints = null, place = null;
   if (lms) {
+    // 正側面用 2D 像素座標算角度最準；手機沒對準側面時，2D 會變形，逐漸改用 3D 世界座標
     joints = sideJoints(lms, side, w, h);
-    m = ex.measure(joints);
+    const view = world ? viewAngle(world) : null;
+    m = blendMeasures(ex.measure(joints), world && ex.measure(worldJoints(world, lms, side)), weight3D(view));
+    m.view = view;
     place = placement(joints, box, { axis: ex.axis, fillRange: ex.fillRange, joints: ex.boxJoints });
-    $('side').textContent = side === 'left' ? '偵測：左側身體' : '偵測：右側身體';
+    $('side').textContent =
+      (side === 'left' ? '偵測：左側身體' : '偵測：右側身體') + (m.view === null ? '' : ` · 拍攝角度 ${Math.round(m.view)}°`);
   }
   const visible = m && m.visibility >= MIN_VISIBILITY;
   const inBox = visible && place.status === 'ok';
@@ -292,7 +298,7 @@ function handleResult(result, now) {
     if (lms) drawSkeleton(lms, side);
     if (!inBox) drawArrow(box, place);
     setFrameState(state);
-    guide(placementText(visible, place) ?? ex.readyHint, now);
+    guide(placementText(visible, place) ?? viewText(m) ?? ex.readyHint, now);
 
     if (readyTimer.update(posed, now)) {
       phase = 'active';
@@ -336,6 +342,12 @@ function handleResult(result, now) {
   const rep = counter.update(m.key, now, m.extra);
   if (rep) onRep(rep, now);
   window.__app = { counter, phase, key: m.key, extra: m.extra, side, place };
+}
+
+// 角度用 3D 算，偏一點沒關係；偏太多時另一側被擋住，關節點會不準，才提醒
+function viewText(m) {
+  if (m?.view > MAX_VIEW_ANGLE) return '請再側身一點，讓側面對著鏡頭';
+  return null;
 }
 
 function placementText(visible, place) {

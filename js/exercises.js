@@ -4,6 +4,8 @@ import { angle, angleFromVertical, angleFromHorizontal, minVisibility } from './
 // 以及兩個姿勢判斷：
 //   ready：預備姿勢（站直 / 撐起），要維持一段時間才開始計次
 //   valid：做動作過程中姿勢是否還合理（例如深蹲時人要是直立的），不合理就不計
+// measure 會分別用 2D 像素座標和 3D 世界座標各算一次，再依拍攝角度混合（見 pose-math.js 的 weight3D），
+// 所以這裡的計算要同時適用 2D（沒有 z）和 3D。
 // 門檻是起始參考值，之後要用實測資料調整（見 docs/plan.md 第 4 節）。
 export const EXERCISES = {
   squat: {
@@ -31,6 +33,8 @@ export const EXERCISES = {
         extra: {
           髖角: angle(j.shoulder, j.hip, j.knee),
           軀幹前傾: lean,
+          // 大腿與地面的夾角，0° = 大腿平行地面；只看垂直方向，不受拍攝角度影響
+          大腿角度: angleFromHorizontal(j.hip, j.knee),
         },
         // 影像 y 軸向下：肩在髖上方、髖在腳踝上方才算是站著
         upright: j.shoulder.y < j.hip.y && j.hip.y < j.ankle.y,
