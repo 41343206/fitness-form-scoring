@@ -268,7 +268,7 @@ function handleResult(result, now) {
     joints = sideJoints(lms, side, w, h);
     m = ex.measure(joints);
     place = placement(joints, box, { axis: ex.axis, fillRange: ex.fillRange, joints: ex.boxJoints });
-    $('side').textContent = side === 'left' ? '左側' : '右側';
+    $('side').textContent = side === 'left' ? '偵測：左側身體' : '偵測：右側身體';
   }
   const visible = m && m.visibility >= MIN_VISIBILITY;
   const inBox = visible && place.status === 'ok';
