@@ -131,7 +131,7 @@ templates/{templateId}
 - 計次準確率：系統次數 vs 實際次數。
 - 記錄不同手機的畫面更新率（FPS），說明效能。
 
-公開資料集可當補充（例如 Fitness-AQA、EC3D 有深蹲錯誤標註），但使用前需確認授權與拍攝角度是否相符。
+主要使用公開資料集：Mendeley「A Multi-View Raw Video Dataset of Seven Fitness Exercises with Good/Bad Form Labels」（DOI 10.17632/kgbb3yn47p.2，CC BY 4.0）。內含徒手深蹲與伏地挺身，正面、側面、斜面三個角度，並標記 good / bad。側面 good 影片用來建立 DTW 標準模板，good 與 bad 影片用來驗證評分與不同拍攝角度的效果。Fitness-AQA（只有槓鈴深蹲，需申請）和 EC3D（無伏地挺身）較不適合。
 
 ## 8. 路線
 
