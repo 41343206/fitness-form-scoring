@@ -2,6 +2,7 @@ import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@m
 import { pickSide, sideJoints, worldJoints, viewAngle, weight3D, blendMeasures, Smoother, HoldTimer, placement } from './pose-math.js';
 import { RepCounter } from './rep-counter.js';
 import { EXERCISES } from './exercises.js';
+import { scoreRep, summarize, repSequence } from './scoring.js';
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
@@ -12,6 +13,7 @@ const INVALID_CANCEL_MS = 500; // 離開框或姿勢不對超過這麼久，丟�
 const INVALID_PAUSE_MS = 3000; // 超過這麼久就暫停，要重新進框擺好姿勢才繼續
 const GUIDE_MIN_GAP_MS = 2500; // 語音引導最短間隔，避免一直講
 const GUIDE_REPEAT_MS = 8000; // 同一句引導多久重複一次
+const TEMPLATE_REPS = 3; // 錄製標準動作要做幾下
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -40,6 +42,9 @@ let wakeLock = null;
 let phase = 'idle';
 let lockedSide = null;
 let lastGuide = { text: '', at: 0 };
+let results = []; // 這一組每一下的評分
+let templates = []; // DTW 比對用的標準動作
+let recording = null; // 錄製標準動作時的暫存：{ reps: [] }
 
 // ---------- 頁面切換 ----------
 
@@ -65,6 +70,8 @@ function showWorkout(id) {
   $('workout-title').textContent = ex.name;
   $('key-label').textContent = ex.keyLabel;
   $('tips').innerHTML = ex.tips.map((t) => `<li>${t}</li>`).join('');
+  templates = loadTemplates(id);
+  updateRecordButton();
   resetCounter();
   $('page-select').hidden = true;
   $('page-workout').hidden = false;
@@ -156,6 +163,7 @@ async function openSource(source) {
     status.textContent = '';
     $('camera-panel').hidden = true;
     $('go').disabled = false;
+    $('record').disabled = false;
     keepScreenOn();
     startSet();
     checkOrientation();
@@ -184,6 +192,8 @@ function stopAll() {
   showCenter('');
   $('camera-panel').hidden = false;
   $('go').disabled = true;
+  $('record').disabled = true;
+  stopRecording();
   $('status').textContent = '';
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
@@ -205,7 +215,8 @@ function resetCounter() {
   counter = new RepCounter({ downAngle: ex.downAngle, upAngle: ex.upAngle });
   smoother.reset();
   $('count').textContent = '0';
-  $('last-min').textContent = '–';
+  $('last-score').textContent = '–';
+  results = [];
   $('key-angle').textContent = '–';
   $('extra').innerHTML = '';
 }
@@ -227,8 +238,13 @@ function finishSet() {
   lockedSide = null;
   showHint('');
   setFrameState('');
-  showCenter(`完成 ${counter.count} 下`, true);
-  speak(`完成 ${counter.count} 下`);
+  stopRecording();
+  const sum = summarize(results);
+  const lines = [`完成 ${counter.count} 下`];
+  if (sum.avg !== null) lines.push(`平均 ${sum.avg} 分`);
+  if (sum.topIssue) lines.push(`最常見：${sum.topIssue.feedback}（${sum.topIssue.times} 次）`);
+  showCenter(lines.join('\n'), true);
+  speak(lines.slice(0, 2).join('，'));
   setGoButton('再一組');
 }
 
@@ -372,10 +388,82 @@ function guide(text, now) {
 }
 
 function onRep(rep, now) {
+  const ex = EXERCISES[exerciseId];
   $('count').textContent = String(rep.index);
-  $('last-min').textContent = `${Math.round(rep.minAngle)}°`;
-  speak(String(rep.index));
   lastGuide = { text: '', at: now };
+
+  if (recording) {
+    // 錄製標準動作：這幾下不評分，存成 DTW 模板
+    recording.reps.push(repSequence(ex, rep));
+    if (recording.reps.length >= TEMPLATE_REPS) {
+      templates = recording.reps;
+      saveTemplates(exerciseId, templates);
+      stopRecording();
+      updateRecordButton();
+      speak('標準動作已儲存');
+    } else {
+      showRecording();
+      speak(String(rep.index));
+    }
+    return;
+  }
+
+  const result = scoreRep(ex, rep, templates);
+  results.push(result);
+  $('last-score').textContent = `${result.score} 分`;
+  speak(result.feedback ? `${rep.index}，${result.feedback.feedback}` : String(rep.index));
+  window.__results = results;
+}
+
+// ---------- 標準動作（DTW 模板） ----------
+
+// 存在瀏覽器裡（localStorage）；沒錄過就用 exercises.js 的理想曲線
+function loadTemplates(id) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`template:${id}`));
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch {
+    // 讀不到就用預設
+  }
+  return [EXERCISES[id].defaultTemplate()];
+}
+
+function saveTemplates(id, t) {
+  try {
+    localStorage.setItem(`template:${id}`, JSON.stringify(t));
+  } catch (err) {
+    console.warn('無法儲存標準動作', err);
+  }
+}
+
+function hasCustomTemplate(id) {
+  try {
+    return !!localStorage.getItem(`template:${id}`);
+  } catch {
+    return false;
+  }
+}
+
+function updateRecordButton() {
+  $('record').textContent = recording ? '取消錄製' : hasCustomTemplate(exerciseId) ? '重錄標準' : '錄標準動作';
+}
+
+function startRecording() {
+  recording = { reps: [] };
+  showRecording();
+  updateRecordButton();
+  speak(`請做 ${TEMPLATE_REPS} 下標準動作`);
+}
+
+function stopRecording() {
+  recording = null;
+  $('rec').hidden = true;
+  if (exerciseId) updateRecordButton();
+}
+
+function showRecording() {
+  $('rec').hidden = false;
+  $('rec').textContent = `● 錄製標準動作 ${recording.reps.length}/${TEMPLATE_REPS}`;
 }
 
 // ---------- 畫面 ----------
@@ -537,6 +625,14 @@ $('go').addEventListener('click', () => {
   } else if (phase === 'ready' || phase === 'active') {
     finishSet();
   }
+});
+$('record').addEventListener('click', () => {
+  if (recording) {
+    stopRecording();
+    return;
+  }
+  if (phase === 'done') startSet();
+  startRecording();
 });
 $('flip').addEventListener('click', async () => {
   facingMode = facingMode === 'environment' ? 'user' : 'environment';

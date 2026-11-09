@@ -194,7 +194,7 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
   pointer-events: none;
 }
-.center.small { font-size: 32px; padding: 0 24px; }
+.center.small { font-size: 30px; padding: 0 24px; white-space: pre-line; line-height: 1.5; }
 
 .panel {
   position: absolute;
@@ -222,3 +222,17 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 #stage[data-state="wait"]::after { border-color: var(--warn); }
 #stage[data-state="good"]::after,
 #stage[data-state="active"]::after { border-color: var(--accent); }
+
+/* 錄製標準動作 */
+.small-btn { font-size: 14px; padding: 8px 10px; min-width: 64px; }
+.rec {
+  position: absolute;
+  top: 84px;
+  left: 12px;
+  background: rgba(255, 90, 95, 0.9);
+  color: #fff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 15px;
+  font-weight: 600;
+}

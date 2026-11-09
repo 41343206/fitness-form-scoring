@@ -6,7 +6,18 @@ import { angle, angleFromVertical, angleFromHorizontal, minVisibility } from './
 //   valid：做動作過程中姿勢是否還合理（例如深蹲時人要是直立的），不合理就不計
 // measure 會分別用 2D 像素座標和 3D 世界座標各算一次，再依拍攝角度混合（見 pose-math.js 的 weight3D），
 // 所以這裡的計算要同時適用 2D（沒有 z）和 3D。
+// rules：每一下的評分規則（見 scoring.js），value 從這一下的資料算出數值，
+//   達到 full 得滿分、到 zero 得 0 分；feedback 是扣分最多時的語音提示。
+// dtwFeatures：DTW 比對用的特徵；defaultTemplate：還沒錄製標準動作時用的理想曲線。
 // 門檻是起始參考值，之後要用實測資料調整（見 docs/plan.md 第 4 節）。
+
+const maxOf = (rep, k) => Math.max(...rep.frames.map((f) => f[k]).filter(Number.isFinite));
+const minOf = (rep, k) => Math.min(...rep.frames.map((f) => f[k]).filter(Number.isFinite));
+
+// 一下理想動作的曲線：從 top 平滑降到 bottom 再回到 top
+const curve = (n, top, bottom) =>
+  Array.from({ length: n }, (_, i) => top - (top - bottom) * Math.sin((Math.PI * i) / (n - 1)));
+
 export const EXERCISES = {
   squat: {
     name: '深蹲',
@@ -40,6 +51,16 @@ export const EXERCISES = {
         upright: j.shoulder.y < j.hip.y && j.hip.y < j.ankle.y,
         lean,
       };
+    },
+    rules: [
+      { id: 'depth', label: '深度', feedback: '再蹲低一點', weight: 45, full: 90, zero: 125, value: (rep) => rep.minAngle },
+      { id: 'lean', label: '軀幹', feedback: '胸口挺起來', weight: 30, full: 45, zero: 65, value: (rep) => maxOf(rep, '軀幹前傾') },
+      { id: 'tempo', label: '節奏', feedback: '下蹲慢一點', weight: 25, full: 0.8, zero: 0.3, value: (rep) => rep.descentMs / 1000 },
+    ],
+    dtwFeatures: (f) => [f.key, f.軀幹前傾],
+    defaultTemplate() {
+      const knee = curve(30, 170, 85), lean = curve(30, 8, 35);
+      return knee.map((k, i) => [k, lean[i]]);
     },
     ready(m) {
       return m.upright && m.key >= this.upAngle && m.lean < 25;
@@ -78,6 +99,15 @@ export const EXERCISES = {
         tilt: angleFromHorizontal(j.shoulder, j.ankle),
         handsBelowShoulder: j.wrist.y > j.shoulder.y,
       };
+    },
+    rules: [
+      { id: 'depth', label: '深度', feedback: '再往下一點', weight: 40, full: 90, zero: 125, value: (rep) => rep.minAngle },
+      { id: 'line', label: '身體直線', feedback: '核心收緊，身體保持一直線', weight: 40, full: 165, zero: 140, value: (rep) => minOf(rep, '身體直線') },
+      { id: 'tempo', label: '節奏', feedback: '慢一點，控制速度', weight: 20, full: 0.6, zero: 0.2, value: (rep) => rep.descentMs / 1000 },
+    ],
+    dtwFeatures: (f) => [f.key, f.身體直線],
+    defaultTemplate() {
+      return curve(30, 165, 80).map((e) => [e, 175]);
     },
     ready(m) {
       return m.tilt < 35 && m.handsBelowShoulder && m.key >= this.upAngle && m.bodyLine >= 150;
