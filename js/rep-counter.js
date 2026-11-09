@@ -81,3 +81,39 @@ export class RepCounter {
     c.frames.push({ t: timestamp, key: keyAngle, ...frame });
   }
 }
+
+// 靜態動作（棒式）的計時：累計總時間和「姿勢正確」的時間。
+// 不在定位的時間不算（呼叫 skip），兩幀間隔過大時只算 maxGapMs，避免卡頓時灌水。
+export class HoldTracker {
+  constructor(maxGapMs = 250) {
+    this.maxGapMs = maxGapMs;
+    this.reset();
+  }
+
+  reset() {
+    this.goodMs = 0;
+    this.totalMs = 0;
+    this.last = null;
+  }
+
+  start(timestamp) {
+    this.last = timestamp;
+  }
+
+  update(good, timestamp) {
+    if (this.last !== null) {
+      const dt = Math.min(Math.max(0, timestamp - this.last), this.maxGapMs);
+      this.totalMs += dt;
+      if (good) this.goodMs += dt;
+    }
+    this.last = timestamp;
+  }
+
+  skip(timestamp) {
+    this.last = timestamp;
+  }
+
+  percent() {
+    return this.totalMs > 0 ? Math.round((100 * this.goodMs) / this.totalMs) : 0;
+  }
+}

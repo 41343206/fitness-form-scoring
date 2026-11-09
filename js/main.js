@@ -1,6 +1,6 @@
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 import { pickSide, sideJoints, worldJoints, viewAngle, weight3D, blendMeasures, Smoother, HoldTimer, placement } from './pose-math.js';
-import { RepCounter } from './rep-counter.js';
+import { RepCounter, HoldTracker } from './rep-counter.js';
 import { EXERCISES } from './exercises.js';
 import { scoreRep, summarize, repSequence } from './scoring.js';
 
@@ -14,6 +14,9 @@ const INVALID_PAUSE_MS = 3000; // 超過這麼久就暫停，要重新進框擺�
 const GUIDE_MIN_GAP_MS = 2500; // 語音引導最短間隔，避免一直講
 const GUIDE_REPEAT_MS = 8000; // 同一句引導多久重複一次
 const TEMPLATE_REPS = 3; // 錄製標準動作要做幾下
+const HOLD_FEEDBACK_MS = 1000; // 棒式姿勢跑掉超過這麼久才語音提醒
+const HOLD_FEEDBACK_GAP_MS = 4000; // 棒式提醒的最短間隔
+const HOLD_ANNOUNCE_S = 10; // 棒式每幾秒報一次時間
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -24,6 +27,10 @@ let landmarkerPromise = null;
 let landmarker = null;
 let exerciseId = null;
 let counter = null;
+const hold = new HoldTracker(); // 棒式計時
+let holdBadSince = null;
+let holdLastFeedback = 0;
+let holdNextAnnounce = HOLD_ANNOUNCE_S;
 const smoother = new Smoother(0.5);
 const readyTimer = new HoldTimer(READY_HOLD_MS);
 const invalidCancelTimer = new HoldTimer(INVALID_CANCEL_MS);
@@ -69,6 +76,11 @@ function showWorkout(id) {
   }
   $('workout-title').textContent = ex.name;
   $('key-label').textContent = ex.keyLabel;
+  // 棒式：大數字是「姿勢正確的秒數」，另一欄是正確比例；不用錄標準動作
+  const isHold = ex.mode === 'hold';
+  $('count-unit').textContent = isHold ? '秒' : '下';
+  $('last-label').textContent = isHold ? '正確比例' : '上一下';
+  $('record').hidden = isHold;
   $('tips').innerHTML = ex.tips.map((t) => `<li>${t}</li>`).join('');
   templates = loadTemplates(id);
   updateRecordButton();
@@ -212,7 +224,11 @@ function checkOrientation() {
 
 function resetCounter() {
   const ex = EXERCISES[exerciseId];
-  counter = new RepCounter({ downAngle: ex.downAngle, upAngle: ex.upAngle });
+  counter = new RepCounter({ downAngle: ex.downAngle ?? 0, upAngle: ex.upAngle ?? 180 });
+  hold.reset();
+  holdBadSince = null;
+  holdLastFeedback = 0;
+  holdNextAnnounce = HOLD_ANNOUNCE_S;
   smoother.reset();
   $('count').textContent = '0';
   $('last-score').textContent = '–';
@@ -239,10 +255,16 @@ function finishSet() {
   showHint('');
   setFrameState('');
   stopRecording();
-  const sum = summarize(results);
-  const lines = [`完成 ${counter.count} 下`];
-  if (sum.avg !== null) lines.push(`平均 ${sum.avg} 分`);
-  if (sum.topIssue) lines.push(`最常見：${sum.topIssue.feedback}（${sum.topIssue.times} 次）`);
+  let lines;
+  if (EXERCISES[exerciseId].mode === 'hold') {
+    const total = Math.round(hold.totalMs / 1000), good = Math.round(hold.goodMs / 1000);
+    lines = [`維持 ${total} 秒`, `姿勢正確 ${good} 秒（${hold.percent()}%）`];
+  } else {
+    const sum = summarize(results);
+    lines = [`完成 ${counter.count} 下`];
+    if (sum.avg !== null) lines.push(`平均 ${sum.avg} 分`);
+    if (sum.topIssue) lines.push(`最常見：${sum.topIssue.feedback}（${sum.topIssue.times} 次）`);
+  }
   showCenter(lines.join('\n'), true);
   speak(lines.slice(0, 2).join('，'));
   setGoButton('再一組');
@@ -320,6 +342,7 @@ function handleResult(result, now) {
       phase = 'active';
       lockedSide = side;
       counter.start();
+      hold.start(now);
       invalidCancelTimer.reset();
       invalidPauseTimer.reset();
       showHint('');
@@ -337,6 +360,7 @@ function handleResult(result, now) {
   if (!inBox) drawArrow(box, place);
   setFrameState(ok ? 'active' : 'bad');
 
+  if (!ok) hold.skip(now); // 不在定位的時間不算進棒式
   if (invalidPauseTimer.update(!ok, now)) {
     // 離開太久（走去拿手機、休息等），暫停；要重新進框擺好姿勢才繼續
     counter.cancel();
@@ -355,9 +379,39 @@ function handleResult(result, now) {
   if (!ok) return;
   showHint('');
 
+  if (ex.mode === 'hold') {
+    handleHold(ex, m, now);
+    window.__app = { hold, phase, key: m.key, side, place };
+    return;
+  }
+
   const rep = counter.update(m.key, now, m.extra);
   if (rep) onRep(rep, now);
   window.__app = { counter, phase, key: m.key, extra: m.extra, side, place };
+}
+
+// 棒式：累計姿勢正確的秒數；姿勢跑掉一陣子才提醒，每 10 秒報一次時間
+function handleHold(ex, m, now) {
+  const good = ex.holdGood(m);
+  hold.update(good, now);
+  const secs = Math.floor(hold.goodMs / 1000);
+  $('count').textContent = String(secs);
+  $('last-score').textContent = `${hold.percent()}%`;
+  if (good) {
+    holdBadSince = null;
+  } else {
+    if (holdBadSince === null) holdBadSince = now;
+    const text = ex.holdFeedback(m);
+    showHint(text);
+    if (now - holdBadSince >= HOLD_FEEDBACK_MS && now - holdLastFeedback >= HOLD_FEEDBACK_GAP_MS) {
+      speak(text);
+      holdLastFeedback = now;
+    }
+  }
+  if (secs >= holdNextAnnounce) {
+    speak(`${secs} 秒`);
+    holdNextAnnounce += HOLD_ANNOUNCE_S;
+  }
 }
 
 // 角度用 3D 算，偏一點沒關係；偏太多時另一側被擋住，關節點會不準，才提醒
@@ -425,7 +479,8 @@ function loadTemplates(id) {
   } catch {
     // 讀不到就用預設
   }
-  return [EXERCISES[id].defaultTemplate()];
+  // 棒式（計時）沒有 DTW 模板
+  return EXERCISES[id].defaultTemplate ? [EXERCISES[id].defaultTemplate()] : [];
 }
 
 function saveTemplates(id, t) {

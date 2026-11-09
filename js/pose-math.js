@@ -14,18 +14,20 @@ export const LM = {
 
 // 每一側會用到的關節名稱（不含 left/right 前綴）
 const SIDE_JOINTS = ['Ear', 'Shoulder', 'Elbow', 'Wrist', 'Hip', 'Knee', 'Ankle', 'Heel', 'FootIndex'];
+// 另一側的腿（弓箭步要同時看前後兩隻腳），名稱加上 2，例如 knee2
+const OTHER_LEG = ['Hip', 'Knee', 'Ankle', 'Heel', 'FootIndex'];
+const OTHER = { left: 'right', right: 'left' };
+const keyName = (name, suffix = '') => name[0].toLowerCase() + name.slice(1) + suffix;
 
 // 取得某一側的關節點，座標換成像素，避免畫面長寬比讓角度失真
 export function sideJoints(landmarks, side, width, height) {
   const out = {};
-  for (const name of SIDE_JOINTS) {
-    const p = landmarks[LM[side + name]];
-    out[name[0].toLowerCase() + name.slice(1)] = {
-      x: p.x * width,
-      y: p.y * height,
-      v: p.visibility ?? 1,
-    };
-  }
+  const put = (key, i) => {
+    const p = landmarks[i];
+    out[key] = { x: p.x * width, y: p.y * height, v: p.visibility ?? 1 };
+  };
+  for (const name of SIDE_JOINTS) put(keyName(name), LM[side + name]);
+  for (const name of OTHER_LEG) put(keyName(name, '2'), LM[OTHER[side] + name]);
   return out;
 }
 
@@ -35,16 +37,12 @@ export function sideJoints(landmarks, side, width, height) {
 // 可見度沿用 2D 關節點的值。
 export function worldJoints(world, landmarks, side) {
   const out = {};
-  for (const name of SIDE_JOINTS) {
-    const i = LM[side + name];
+  const put = (key, i) => {
     const p = world[i];
-    out[name[0].toLowerCase() + name.slice(1)] = {
-      x: p.x,
-      y: p.y,
-      z: p.z,
-      v: landmarks[i].visibility ?? p.visibility ?? 1,
-    };
-  }
+    out[key] = { x: p.x, y: p.y, z: p.z, v: landmarks[i].visibility ?? p.visibility ?? 1 };
+  };
+  for (const name of SIDE_JOINTS) put(keyName(name), LM[side + name]);
+  for (const name of OTHER_LEG) put(keyName(name, '2'), LM[OTHER[side] + name]);
   return out;
 }
 
@@ -149,6 +147,17 @@ export function placement(j, box, { axis = 'v', fillRange = [0.5, 0.9], margin =
     dx: outLeft ? 1 : outRight ? -1 : 0,
     dy: outTop ? 1 : outBottom ? -1 : 0,
   };
+}
+
+// 髖部偏離「肩–踝連線」多少（除以肩到踝的長度）。
+// 正值＝髖部在連線下方（塌腰），負值＝在上方（翹臀）。影像和世界座標的 y 都是向下。
+export function hipDrop(j) {
+  const s = j.shoulder, a = j.ankle, h = j.hip;
+  const sx = a.x - s.x, sy = a.y - s.y, sz = (a.z ?? 0) - (s.z ?? 0);
+  const len2 = sx * sx + sy * sy + sz * sz;
+  if (len2 === 0) return 0;
+  const t = ((h.x - s.x) * sx + (h.y - s.y) * sy + ((h.z ?? 0) - (s.z ?? 0)) * sz) / len2;
+  return (h.y - (s.y + t * sy)) / Math.sqrt(len2);
 }
 
 export function minVisibility(...points) {

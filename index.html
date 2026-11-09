@@ -30,6 +30,22 @@
         <span class="card-title">伏地挺身</span>
         <span class="card-desc">判斷肘角、身體是否成一直線</span>
       </button>
+      <button class="card" data-exercise="lunge">
+        <span class="card-media">
+          <img src="img/lunge.svg" alt="弓箭步示意圖">
+          <span class="chip">手機直放</span>
+        </span>
+        <span class="card-title">弓箭步</span>
+        <span class="card-desc">判斷前膝、後膝角度與上半身是否挺直</span>
+      </button>
+      <button class="card" data-exercise="plank">
+        <span class="card-media">
+          <img src="img/plank.svg" alt="棒式示意圖">
+          <span class="chip">手機橫放 · 計時</span>
+        </span>
+        <span class="card-title">棒式</span>
+        <span class="card-desc">判斷肩、髖、踝是否成一直線，計算維持秒數</span>
+      </button>
     </div>
     <p id="model-status" class="status"></p>
   </section>
@@ -47,11 +63,11 @@
       <canvas id="overlay"></canvas>
 
       <div id="hud">
-        <div class="count"><span id="count">0</span><small>下</small></div>
+        <div class="count"><span id="count">0</span><small id="count-unit">下</small></div>
         <div class="metrics">
           <div><span id="key-label">膝角</span><b id="key-angle">–</b></div>
           <div id="extra"></div>
-          <div><span>上一下</span><b id="last-score">–</b></div>
+          <div><span id="last-label">上一下</span><b id="last-score">–</b></div>
         </div>
         <div id="hint" class="hint"></div>
         <div id="rec" class="rec" hidden></div>
