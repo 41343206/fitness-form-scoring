@@ -29,7 +29,7 @@ export function repSequence(ex, rep) {
 // 回饋取得分比例最低、且低於 0.8 的那條規則。
 export function scoreRep(ex, rep, templates, { alpha = 0.6 } = {}) {
   const rule = ruleScore(ex.rules, rep);
-  const dtw = dtwScore(repSequence(ex, rep), templates);
+  const dtw = dtwScore(repSequence(ex, rep), templates, { k: ex.dtwK ?? 25 });
   const score = dtw ? alpha * rule.score + (1 - alpha) * dtw.score : rule.score;
   const worst = rule.parts.reduce((a, b) => (b.fraction < a.fraction ? b : a));
   return {

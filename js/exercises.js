@@ -1,4 +1,5 @@
 import { angle, angleFromVertical, angleFromHorizontal, minVisibility, hipDrop } from './pose-math.js';
+import { BUILTIN_TEMPLATES } from './templates.js';
 
 // 每個動作：計次用的關鍵角度與門檻、畫面上顯示的其他角度，
 // 以及兩個姿勢判斷：
@@ -8,7 +9,9 @@ import { angle, angleFromVertical, angleFromHorizontal, minVisibility, hipDrop }
 // 所以這裡的計算要同時適用 2D（沒有 z）和 3D。
 // rules：每一下的評分規則（見 scoring.js），value 從這一下的資料算出數值，
 //   達到 full 得滿分、到 zero 得 0 分；feedback 是扣分最多時的語音提示。
-// dtwFeatures：DTW 比對用的特徵；defaultTemplate：還沒錄製標準動作時用的理想曲線。
+// dtwFeatures：DTW 比對用的特徵；builtinTemplates：資料集標準動作產生的內建模板（見 templates.js）；
+// defaultTemplate：沒有內建模板時用的理想曲線（弓箭步目前還沒有資料集）。
+// dtwK：DTW 換算分數的寬鬆程度，依資料集設定成「標準動作的中位數約 85 分」。
 // mode: 'hold' 是靜態動作（棒式），不計次，改成計時：holdGood 判斷這一幀姿勢對不對，
 //   holdFeedback 是姿勢不對時的語音提示。
 // 門檻是起始參考值，之後要用實測資料調整（見 docs/plan.md 第 4 節）。
@@ -67,6 +70,8 @@ export const EXERCISES = {
       { id: 'tempo', label: '節奏', feedback: '下蹲慢一點', weight: 25, full: 0.8, zero: 0.3, value: (rep) => rep.descentMs / 1000 },
     ],
     dtwFeatures: (f) => [f.key, f.軀幹前傾],
+    builtinTemplates: BUILTIN_TEMPLATES.squat,
+    dtwK: 40,
     defaultTemplate() {
       const knee = curve(30, 170, 85), lean = curve(30, 8, 35);
       return knee.map((k, i) => [k, lean[i]]);
@@ -110,6 +115,8 @@ export const EXERCISES = {
       { id: 'tempo', label: '節奏', feedback: '慢一點，控制速度', weight: 20, full: 0.6, zero: 0.2, value: (rep) => rep.descentMs / 1000 },
     ],
     dtwFeatures: (f) => [f.key, f.身體直線],
+    builtinTemplates: BUILTIN_TEMPLATES.pushup,
+    dtwK: 20,
     defaultTemplate() {
       return curve(30, 165, 80).map((e) => [e, 175]);
     },

@@ -93,3 +93,18 @@ test('summarize：平均分數與最常見的錯誤', () => {
   assert.equal(s.topIssue.times, 2);
   assert.equal(summarize([]).avg, null);
 });
+
+test('內建模板：資料集標準動作和 dtwFeatures 格式一致，標準的一下 DTW 分數高', async () => {
+  const { BUILTIN_TEMPLATES } = await import('../js/templates.js');
+  for (const id of ['squat', 'pushup']) {
+    const ts = BUILTIN_TEMPLATES[id];
+    assert.ok(ts.length >= 8, `${id} 模板數 ${ts.length}`);
+    assert.ok(ts.every((t) => t.length === 40 && t.every((v) => v.length === 2 && v.every(Number.isFinite))));
+    assert.equal(EXERCISES[id].builtinTemplates, ts);
+  }
+  // 用其中一個模板當作使用者的一下：DTW 應接近滿分
+  const ex = EXERCISES.squat;
+  const t = ex.builtinTemplates[0];
+  const rep = { minAngle: Math.min(...t.map((v) => v[0])), descentMs: 1000, frames: t.map(([key, lean], i) => ({ t: i * 33, key, 軀幹前傾: lean })) };
+  assert.ok(scoreRep(ex, rep, ex.builtinTemplates).dtwScore >= 99);
+});

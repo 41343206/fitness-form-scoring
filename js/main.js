@@ -471,7 +471,7 @@ function onRep(rep, now) {
 
 // ---------- 標準動作（DTW 模板） ----------
 
-// 存在瀏覽器裡（localStorage）；沒錄過就用 exercises.js 的理想曲線
+// 自己錄的存在瀏覽器裡（localStorage），會取代內建的模板
 function loadTemplates(id) {
   try {
     const saved = JSON.parse(localStorage.getItem(`template:${id}`));
@@ -479,8 +479,10 @@ function loadTemplates(id) {
   } catch {
     // 讀不到就用預設
   }
-  // 棒式（計時）沒有 DTW 模板
-  return EXERCISES[id].defaultTemplate ? [EXERCISES[id].defaultTemplate()] : [];
+  // 沒錄過就用內建的資料集標準動作；沒有內建的用理想曲線；棒式（計時）不用模板
+  const ex = EXERCISES[id];
+  if (ex.builtinTemplates?.length) return ex.builtinTemplates;
+  return ex.defaultTemplate ? [ex.defaultTemplate()] : [];
 }
 
 function saveTemplates(id, t) {
