@@ -202,6 +202,7 @@ function stopAll() {
   setFrameState('');
   showHint('');
   showCenter('');
+  hideSummary();
   $('camera-panel').hidden = false;
   $('go').disabled = true;
   $('record').disabled = true;
@@ -247,6 +248,7 @@ function startSet() {
   invalidPauseTimer.reset();
   lastGuide = { text: '', at: 0 };
   showCenter('');
+  hideSummary();
   setGoButton('結束');
 }
 
@@ -256,21 +258,51 @@ function finishSet() {
   showHint('');
   setFrameState('');
   stopRecording();
-  let lines;
+  readyTimer.reset();
+  showCenter('');
   if (EXERCISES[exerciseId].mode === 'hold') {
     const total = Math.round(hold.totalMs / 1000), good = Math.round(hold.goodMs / 1000);
-    lines = [`維持 ${total} 秒`, `姿勢正確 ${good} 秒（${hold.percent()}%）`];
+    showSummary([`維持 ${total} 秒`, `姿勢正確 ${good} 秒（${hold.percent()}%）`], []);
+    speak(`維持 ${total} 秒，姿勢正確 ${good} 秒`);
   } else {
     const sum = summarize(results);
-    lines = [`完成 ${counter.count} 下`];
+    const lines = [`完成 ${counter.count} 下`];
     if (sum.count) lines.push(`標準 ${sum.standard} 下 · 不標準 ${sum.nonStandard} 下`);
     if (sum.avg !== null) lines.push(`平均 ${sum.avg} 分`);
     if (sum.issues.length) lines.push(`不標準原因：${sum.issues.map((i) => `${i.label} ${i.times}`).join('、')}`);
     if (sum.topIssue) lines.push(`建議：${sum.topIssue.feedback}`);
+    showSummary(lines, results);
+    // 人離手機有段距離，用語音唸出重點
+    let say = `完成 ${counter.count} 下`;
+    if (sum.count) say += `，標準 ${sum.standard} 下，平均 ${sum.avg} 分`;
+    if (sum.topIssue) say += `，建議${sum.topIssue.feedback}`;
+    speak(say);
   }
-  showCenter(lines.join('\n'), true);
-  speak(lines.slice(0, 2).join('，').replace(' · ', '，'));
   setGoButton('再一組');
+}
+
+// 有沒有做了東西：自動結束只在做過至少一下（棒式至少 1 秒）之後才觸發
+function hasProgress() {
+  return EXERCISES[exerciseId].mode === 'hold' ? hold.goodMs >= 1000 : counter.count > 0;
+}
+
+// 結果頁：上面是總結，下面列出每一下的分數與扣分項目
+function showSummary(lines, reps) {
+  const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+  const head = `<div class="sum-head">${lines.map((l, i) => `<div class="${i === 0 ? 'sum-big' : ''}">${esc(l)}</div>`).join('')}</div>`;
+  const rows = reps.map((r) => {
+    const lost = r.parts.filter((p) => p.fraction < 1).map((p) => `${p.label} −${Math.round(p.weight * (1 - p.fraction))}`);
+    if (r.dtwScore !== null) lost.push(`動作曲線 ${r.dtwScore} 分`);
+    return `<li class="${r.standard ? 'ok' : 'ng'}"><span class="sum-idx">第 ${r.index} 下</span><b>${r.score} 分</b><span class="sum-tag">${r.standard ? '標準' : '不標準'}</span><span class="sum-detail">${esc(lost.join(' · ') || '沒有扣分')}</span></li>`;
+  }).join('');
+  const el = $('summary');
+  el.innerHTML = head + (rows ? `<ol class="sum-reps">${rows}</ol>` : '');
+  el.scrollTop = 0;
+  el.hidden = false;
+}
+
+function hideSummary() {
+  $('summary').hidden = true;
 }
 
 function setGoButton(label) {
@@ -327,8 +359,11 @@ function handleResult(result, now) {
   }
 
   if (phase === 'done') {
-    drawBox(box, 'idle');
+    // 看完結果再走回框內擺好預備姿勢，就自動開始下一組
+    const posed = !fromFile && inBox && ex.ready(m);
+    drawBox(box, posed ? 'good' : 'idle');
     if (lms) drawSkeleton(lms, side);
+    if (readyTimer.update(posed, now)) startSet();
     return;
   }
 
@@ -365,8 +400,13 @@ function handleResult(result, now) {
 
   if (!ok) hold.skip(now); // 不在定位的時間不算進棒式
   if (invalidPauseTimer.update(!ok, now)) {
-    // 離開太久（走去拿手機、休息等），暫停；要重新進框擺好姿勢才繼續
     counter.cancel();
+    // 做完離開框（走去拿手機）超過 3 秒：自動結束並唸出總結，不用走回去按「結束」
+    if (hasProgress()) {
+      finishSet();
+      return;
+    }
+    // 還沒做任何一下就離開：暫停，要重新進框擺好姿勢才繼續
     phase = 'ready';
     lockedSide = null;
     readyTimer.reset();
@@ -471,7 +511,7 @@ function onRep(rep, now) {
   }
 
   const result = scoreRep(ex, rep, templates);
-  results.push(result);
+  results.push({ ...result, index: rep.index });
   $('last-score').textContent = `${result.score} 分`;
   $('last-score').dataset.standard = result.standard ? 'yes' : 'no';
   speak(result.feedback ? `${rep.index}，${result.feedback.feedback}` : String(rep.index));
