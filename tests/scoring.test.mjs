@@ -92,6 +92,17 @@ test('summarize：平均分數與最常見的錯誤', () => {
   assert.equal(s.topIssue.id, 'depth');
   assert.equal(s.topIssue.times, 2);
   assert.equal(summarize([]).avg, null);
+  // 標準 1 下、不標準 2 下（原因都是深度）
+  assert.equal(s.standard, 1);
+  assert.equal(s.nonStandard, 2);
+  assert.deepEqual(s.issues, [{ label: '深度', times: 2 }]);
+});
+
+test('標準與否：總分 ≥ 80 且沒有提示才算標準', () => {
+  const ex = EXERCISES.squat;
+  assert.equal(scoreRep(ex, squatRep(), []).standard, true);
+  assert.equal(scoreRep(ex, squatRep({ bottom: 118 }), []).standard, false);
+  assert.equal(scoreRep(ex, squatRep({ maxLean: 60 }), []).standard, false);
 });
 
 test('內建模板：資料集標準動作和 dtwFeatures 格式一致，標準的一下 DTW 分數高', async () => {

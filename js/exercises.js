@@ -14,6 +14,8 @@ import { BUILTIN_TEMPLATES } from './templates.js';
 // dtwK：DTW 換算分數的寬鬆程度，依資料集設定成「標準動作的中位數約 85 分」。
 // mode: 'hold' 是靜態動作（棒式），不計次，改成計時：holdGood 判斷這一幀姿勢對不對，
 //   holdFeedback 是姿勢不對時的語音提示。
+// downAngle 是「算一下」的最低門檻，刻意放寬：蹲不夠低也會計次，再由評分判斷標準與否（見 scoring.js 的 STANDARD_SCORE），
+// 只擋掉兩下之間調整姿勢這類很小的動作。
 // 門檻是起始參考值，之後要用實測資料調整（見 docs/plan.md 第 4 節）。
 
 const maxOf = (rep, k) => Math.max(...rep.frames.map((f) => f[k]).filter(Number.isFinite));
@@ -34,7 +36,7 @@ export const EXERCISES = {
   squat: {
     name: '深蹲',
     keyLabel: '膝角',
-    downAngle: 100,
+    downAngle: 140,
     upAngle: 160,
     tips: ['手機直放在地上或靠牆，從側面拍', '站進畫面中的框框，框變綠就會自動開始'],
     readyHint: '請側身站直，準備開始',
@@ -64,10 +66,11 @@ export const EXERCISES = {
         lean,
       };
     },
+    // 節奏的滿分門檻依資料集 good 動作下蹲時間的第 20 百分位設定（深蹲 0.6 秒、伏地挺身 0.4 秒）
     rules: [
       { id: 'depth', label: '深度', feedback: '再蹲低一點', weight: 45, full: 90, zero: 125, value: (rep) => rep.minAngle },
       { id: 'lean', label: '軀幹', feedback: '胸口挺起來', weight: 30, full: 45, zero: 65, value: (rep) => maxOf(rep, '軀幹前傾') },
-      { id: 'tempo', label: '節奏', feedback: '下蹲慢一點', weight: 25, full: 0.8, zero: 0.3, value: (rep) => rep.descentMs / 1000 },
+      { id: 'tempo', label: '節奏', feedback: '下蹲慢一點', weight: 25, full: 0.6, zero: 0.3, value: (rep) => rep.descentMs / 1000 },
     ],
     dtwFeatures: (f) => [f.key, f.軀幹前傾],
     builtinTemplates: BUILTIN_TEMPLATES.squat,
@@ -86,7 +89,7 @@ export const EXERCISES = {
   pushup: {
     name: '伏地挺身',
     keyLabel: '肘角',
-    downAngle: 100,
+    downAngle: 135,
     upAngle: 150,
     tips: ['手機橫放在地上，從側面拍', '趴進畫面中的框框，框變綠就會自動開始'],
     readyHint: '請撐起身體，手臂打直',
@@ -112,7 +115,7 @@ export const EXERCISES = {
     rules: [
       { id: 'depth', label: '深度', feedback: '再往下一點', weight: 40, full: 90, zero: 125, value: (rep) => rep.minAngle },
       { id: 'line', label: '身體直線', feedback: '核心收緊，身體保持一直線', weight: 40, full: 165, zero: 140, value: (rep) => minOf(rep, '身體直線') },
-      { id: 'tempo', label: '節奏', feedback: '慢一點，控制速度', weight: 20, full: 0.6, zero: 0.2, value: (rep) => rep.descentMs / 1000 },
+      { id: 'tempo', label: '節奏', feedback: '慢一點，控制速度', weight: 20, full: 0.4, zero: 0.2, value: (rep) => rep.descentMs / 1000 },
     ],
     dtwFeatures: (f) => [f.key, f.身體直線],
     builtinTemplates: BUILTIN_TEMPLATES.pushup,
@@ -130,7 +133,7 @@ export const EXERCISES = {
   lunge: {
     name: '弓箭步',
     keyLabel: '前膝角',
-    downAngle: 105,
+    downAngle: 140,
     upAngle: 155,
     tips: ['手機直放在地上或靠牆，從側面拍', '站進畫面中的框框，框變綠就會自動開始；前後腳都要入鏡'],
     readyHint: '請側身站直，準備開始',

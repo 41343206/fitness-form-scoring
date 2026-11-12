@@ -236,3 +236,7 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   font-size: 15px;
   font-weight: 600;
 }
+
+/* 上一下的分數：標準綠色、不標準紅色 */
+#last-score[data-standard='yes'] { color: #3ddc84; }
+#last-score[data-standard='no'] { color: #ff5a5f; }

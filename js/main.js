@@ -232,6 +232,7 @@ function resetCounter() {
   smoother.reset();
   $('count').textContent = '0';
   $('last-score').textContent = '–';
+  delete $('last-score').dataset.standard;
   results = [];
   $('key-angle').textContent = '–';
   $('extra').innerHTML = '';
@@ -262,11 +263,13 @@ function finishSet() {
   } else {
     const sum = summarize(results);
     lines = [`完成 ${counter.count} 下`];
+    if (sum.count) lines.push(`標準 ${sum.standard} 下 · 不標準 ${sum.nonStandard} 下`);
     if (sum.avg !== null) lines.push(`平均 ${sum.avg} 分`);
-    if (sum.topIssue) lines.push(`最常見：${sum.topIssue.feedback}（${sum.topIssue.times} 次）`);
+    if (sum.issues.length) lines.push(`不標準原因：${sum.issues.map((i) => `${i.label} ${i.times}`).join('、')}`);
+    if (sum.topIssue) lines.push(`建議：${sum.topIssue.feedback}`);
   }
   showCenter(lines.join('\n'), true);
-  speak(lines.slice(0, 2).join('，'));
+  speak(lines.slice(0, 2).join('，').replace(' · ', '，'));
   setGoButton('再一組');
 }
 
@@ -447,7 +450,12 @@ function onRep(rep, now) {
   lastGuide = { text: '', at: now };
 
   if (recording) {
-    // 錄製標準動作：這幾下不評分，存成 DTW 模板
+    // 錄製標準動作：只收規則部分完全沒問題的那幾下，存成 DTW 模板
+    const check = scoreRep(ex, rep, []);
+    if (!check.standard) {
+      speak(`這下不標準，不列入，${check.feedback?.feedback ?? '再做一次'}`);
+      return;
+    }
     recording.reps.push(repSequence(ex, rep));
     if (recording.reps.length >= TEMPLATE_REPS) {
       templates = recording.reps;
@@ -457,7 +465,7 @@ function onRep(rep, now) {
       speak('標準動作已儲存');
     } else {
       showRecording();
-      speak(String(rep.index));
+      speak(`收到 ${recording.reps.length} 下`);
     }
     return;
   }
@@ -465,6 +473,7 @@ function onRep(rep, now) {
   const result = scoreRep(ex, rep, templates);
   results.push(result);
   $('last-score').textContent = `${result.score} 分`;
+  $('last-score').dataset.standard = result.standard ? 'yes' : 'no';
   speak(result.feedback ? `${rep.index}，${result.feedback.feedback}` : String(rep.index));
   window.__results = results;
 }

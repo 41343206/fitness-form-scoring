@@ -144,3 +144,10 @@ test('伏地挺身：身體水平且手臂打直才算預備姿勢；站著不�
   assert.ok(ex.ready(m) && ex.valid(m));
   assert.ok(!ex.valid(ex.measure(standing())), '站著時不是伏地挺身');
 });
+
+test('放寬門檻：半蹲（膝角 125°）也計次，小幅彎膝（150°）不算', () => {
+  const ex = EXERCISES.squat;
+  const c = new RepCounter({ downAngle: ex.downAngle, upAngle: ex.upAngle });
+  run(c, [...rep(125), ...rep(150), ...rep(85)]);
+  assert.equal(c.count, 2);
+});

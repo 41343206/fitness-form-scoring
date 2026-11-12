@@ -28,7 +28,7 @@ for (const exId of ['squat', 'pushup']) {
   // 留一人驗證：評分某人時，模板不含這個人
   const score = (seq, subj, pool) => { const ts = pool.filter((t) => t.subject !== subj); const d = Math.min(...ts.map((t) => dtwDistance(resample(seq, N), t.seq))); return { d, s: 100 * Math.exp(-d / K) }; };
   const rows = { good: [], bad: [] };
-  for (const c of cs) for (const r of c.reps) { const { d, s } = score(r.seq, c.subject, picks); rows[c.label].push({ subject: c.subject, rule: r.ruleScore, d, dtw: s, total: 0.6 * r.ruleScore + 0.4 * s }); }
+  for (const c of cs) for (const r of c.reps) { const { d, s } = score(r.seq, c.subject, picks); rows[c.label].push({ subject: c.subject, rule: r.ruleScore, d, dtw: s, total: 0.6 * r.ruleScore + 0.4 * s, feedback: r.feedback }); }
   const stat = (k) => ({ good: Math.round(mean(rows.good.map((x) => x[k])) * 10) / 10, bad: Math.round(mean(rows.bad.map((x) => x[k])) * 10) / 10, auc: Math.round(auc(rows.good.map((x) => x[k]), rows.bad.map((x) => x[k])) * 1000) / 1000 });
   const goodClips = new Set(cs.filter((c) => c.label === 'good' && c.reps.length).map((c) => c.subject)).size;
   const badClips = new Set(cs.filter((c) => c.label === 'bad' && c.reps.length).map((c) => c.subject)).size;
@@ -37,6 +37,9 @@ for (const exId of ['squat', 'pushup']) {
   console.log('  rule ', JSON.stringify(stat('rule')));
   console.log('  dtw  ', JSON.stringify(stat('dtw')), 'mean distance good/bad', mean(rows.good.map((x) => x.d)).toFixed(1), mean(rows.bad.map((x) => x.d)).toFixed(1));
   console.log('  total', JSON.stringify(stat('total')));
+  // 系統判為「標準」的比例（總分 ≥ 80 且沒有提示，和 scoring.js 相同）
+  const std = (l) => Math.round((100 * rows[l].filter((x) => Math.round(x.total) >= 80 && !x.feedback).length) / rows[l].length);
+  console.log(`  判為標準：good ${std('good')}%  bad ${std('bad')}%`);
   result[exId] = { picks: picks.map((p) => ({ subject: p.subject, index: p.r.index, ruleScore: p.r.ruleScore, seq: p.seq.map((v) => v.map((a) => Math.round(a))) })), rows };
 }
 if (process.argv[6]) fs.writeFileSync(process.argv[6], JSON.stringify(result));
