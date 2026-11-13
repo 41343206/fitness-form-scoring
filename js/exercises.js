@@ -32,12 +32,21 @@ function lyingBox(w, h) {
   return { x: (w - bw) / 2, y: h - bh - h * 0.06, w: bw, h: bh };
 }
 
+// 依 3D 比重（0 = 全用 2D，1 = 全用 3D，見 pose-math.js 的 weight3D）算出這一幀的計次門檻
+export function repThresholds(ex, w = 0) {
+  const lerp = (a, b) => a + (b - a) * Math.min(1, Math.max(0, w));
+  return { down: lerp(ex.downAngle, ex.downAngle3D ?? ex.downAngle), up: lerp(ex.upAngle, ex.upAngle3D ?? ex.upAngle) };
+}
+
 export const EXERCISES = {
   squat: {
     name: '深蹲',
     keyLabel: '膝角',
     downAngle: 140,
     upAngle: 160,
+    // 斜拍、全用 3D 座標時的門檻：3D 會把站直的腿量成 158–167°，所以放寬（見 docs/view-angle-study.md）
+    downAngle3D: 130,
+    upAngle3D: 148,
     tips: ['用手機支架把手機直放，高度約在腰部，鏡頭水平對著身體側面', '站進畫面中的框框，框變綠就會自動開始'],
     readyHint: '請側身站直，準備開始',
     orientation: 'portrait',
@@ -80,7 +89,7 @@ export const EXERCISES = {
       return knee.map((k, i) => [k, lean[i]]);
     },
     ready(m) {
-      return m.upright && m.key >= this.upAngle && m.lean < 25;
+      return m.upright && m.key >= (m.upAt ?? this.upAngle) && m.lean < 25;
     },
     valid(m) {
       return m.upright && m.lean < 60;
@@ -124,7 +133,7 @@ export const EXERCISES = {
       return curve(30, 165, 80).map((e) => [e, 175]);
     },
     ready(m) {
-      return m.tilt < 35 && m.handsBelowShoulder && m.key >= this.upAngle && m.bodyLine >= 150;
+      return m.tilt < 35 && m.handsBelowShoulder && m.key >= (m.upAt ?? this.upAngle) && m.bodyLine >= 150;
     },
     valid(m) {
       return m.tilt < 45 && m.handsBelowShoulder;
@@ -135,6 +144,8 @@ export const EXERCISES = {
     keyLabel: '前膝角',
     downAngle: 140,
     upAngle: 155,
+    downAngle3D: 130,
+    upAngle3D: 145,
     tips: ['用手機支架把手機直放，高度約在腰部，鏡頭水平對著身體側面', '站進畫面中的框框，框變綠就會自動開始；前後腳都要入鏡'],
     readyHint: '請側身站直，準備開始',
     orientation: 'portrait',
@@ -180,7 +191,7 @@ export const EXERCISES = {
       return front.map((k, i) => [k, back[i]]);
     },
     ready(m) {
-      return m.upright && m.key >= this.upAngle && m.lean < 25;
+      return m.upright && m.key >= (m.upAt ?? this.upAngle) && m.lean < 25;
     },
     valid(m) {
       return m.upright && m.lean < 45;

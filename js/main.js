@@ -1,7 +1,7 @@
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 import { pickSide, sideJoints, worldJoints, viewAngle, weight3D, blendMeasures, Smoother, HoldTimer, placement } from './pose-math.js';
 import { RepCounter, HoldTracker } from './rep-counter.js';
-import { EXERCISES } from './exercises.js';
+import { EXERCISES, repThresholds } from './exercises.js';
 import { scoreRep, summarize, repSequence } from './scoring.js';
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -343,8 +343,16 @@ function handleResult(result, now) {
     // 正側面用 2D 像素座標算角度最準；手機沒對準側面時，2D 會變形，逐漸改用 3D 世界座標
     joints = sideJoints(lms, side, w, h);
     const view = world ? viewAngle(world) : null;
-    m = blendMeasures(ex.measure(joints), world && ex.measure(worldJoints(world, lms, side)), weight3D(view));
+    const w3 = weight3D(view);
+    m = blendMeasures(ex.measure(joints), world && ex.measure(worldJoints(world, lms, side)), w3);
     m.view = view;
+    // 斜拍時多用 3D，3D 會把伸直的腿量得比較彎，所以計次門檻跟著放寬（平滑避免門檻跳動）
+    const th = repThresholds(ex, smoother.update('w3', w3));
+    m.upAt = th.up;
+    if (counter) {
+      counter.downAngle = th.down;
+      counter.upAngle = th.up;
+    }
     place = placement(joints, box, { axis: ex.axis, fillRange: ex.fillRange, joints: ex.boxJoints });
     $('side').textContent =
       (side === 'left' ? '偵測：左側身體' : '偵測：右側身體') + (m.view === null ? '' : ` · 拍攝角度 ${Math.round(m.view)}°`);

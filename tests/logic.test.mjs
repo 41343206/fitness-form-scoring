@@ -151,3 +151,11 @@ test('放寬門檻：半蹲（膝角 125°）也計次，小幅彎膝（150°）
   run(c, [...rep(125), ...rep(150), ...rep(85)]);
   assert.equal(c.count, 2);
 });
+
+test('repThresholds：正側面用原門檻，全用 3D 時放寬（深蹲），伏地挺身不變', async () => {
+  const { repThresholds } = await import('../js/exercises.js');
+  assert.deepEqual(repThresholds(EXERCISES.squat, 0), { down: 140, up: 160 });
+  assert.deepEqual(repThresholds(EXERCISES.squat, 1), { down: 130, up: 148 });
+  assert.deepEqual(repThresholds(EXERCISES.squat, 0.5), { down: 135, up: 154 });
+  assert.deepEqual(repThresholds(EXERCISES.pushup, 1), { down: 135, up: 150 });
+});
