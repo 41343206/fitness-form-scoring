@@ -712,8 +712,19 @@ function drawSkeleton(lms, activeSide) {
 
 // ---------- 事件 ----------
 
+// 手機橫放時網址列會佔掉很多高度，支援的瀏覽器（Android Chrome）進入全螢幕；iPhone Safari 不支援就略過
+function enterFullscreen() {
+  const el = document.documentElement;
+  if (document.fullscreenElement || !el.requestFullscreen) return;
+  el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+}
+function exitFullscreen() {
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+}
+
 document.querySelectorAll('.card').forEach((card) =>
   card.addEventListener('click', () => {
+    enterFullscreen();
     location.hash = card.dataset.exercise;
     // 在點擊事件裡直接開鏡頭，iOS 才會允許
     showWorkout(card.dataset.exercise);
@@ -721,9 +732,13 @@ document.querySelectorAll('.card').forEach((card) =>
   }),
 );
 $('back').addEventListener('click', () => {
+  exitFullscreen();
   location.hash = '';
 });
-$('open-camera').addEventListener('click', () => openSource('camera'));
+$('open-camera').addEventListener('click', () => {
+  enterFullscreen();
+  openSource('camera');
+});
 $('file').addEventListener('change', (e) => {
   const f = e.target.files?.[0];
   if (f) openSource(f);
