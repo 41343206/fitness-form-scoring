@@ -99,6 +99,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .card-title { margin: 14px 4px 0; font-size: 22px; font-weight: 500; }
 .card-desc { margin: 4px 4px 0; font-size: 16px; color: var(--muted); }
 #model-status { margin-top: 24px; }
+.credit { font-size: 12px; color: var(--muted); text-align: center; margin: 12px 0 0; }
+.credit a { color: inherit; }
 
 /* 第二頁 */
 .bar {

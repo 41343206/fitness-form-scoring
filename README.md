@@ -7,7 +7,7 @@
 | 檔案 | 內容 |
 |---|---|
 | `index.html`、`style.css` | 手機版畫面（首頁動作卡片、錄影頁） |
-| `img/` | 首頁動作示意圖（SVG） |
+| `img/` | 首頁動作示範照片（`*.jpg`，來源見下方「圖片來源」）；`*.svg` 是先前自製的示意圖 |
 | `js/main.js` | 鏡頭/影片、MediaPipe 推論、畫骨架、更新畫面 |
 | `js/pose-math.js` | 關節點編號、角度計算、選擇側面、平滑 |
 | `js/rep-counter.js` | 計次狀態機（含緩衝區，避免抖動重複計次）；棒式計時（HoldTracker） |
@@ -90,3 +90,16 @@ npm run serve     # 在 http://localhost:8080 開啟
 | 深蹲 | 膝角（髖–膝–踝） | ≤ 140° | ≥ 160° |
 | 伏地挺身 | 肘角（肩–肘–腕） | ≤ 135° | ≥ 150° |
 | 弓箭步 | 前膝角（兩腳中較小的膝角） | ≤ 140° | ≥ 155° |
+
+## 圖片來源
+
+首頁四張示範照片取自 [free-exercise-db](https://github.com/yuhonas/free-exercise-db)（以 Unlicense 釋出為公眾領域），裁成 16:9：
+
+| 動作 | 原始檔案 |
+|---|---|
+| 深蹲 | `exercises/Freehand_Jump_Squat/0.jpg` |
+| 伏地挺身 | `exercises/Pushups/1.jpg` |
+| 弓箭步 | `exercises/Split_Jump/0.jpg` |
+| 棒式 | `exercises/Plank/1.jpg` |
+
+該專案沒有說明照片最初的拍攝者；若要正式發表，建議改用自行拍攝或 Wikimedia Commons 上授權明確的照片。
