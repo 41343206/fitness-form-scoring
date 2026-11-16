@@ -97,7 +97,7 @@ npm run serve     # 在 http://localhost:8080 開啟
 
 | 動作 | 原始檔案 |
 |---|---|
-| 深蹲 | `exercises/Squats_-_With_Bands/1.jpg` |
+| 深蹲 | `exercises/Freehand_Jump_Squat/0.jpg` |
 | 伏地挺身 | `exercises/Pushups/1.jpg` |
 | 弓箭步 | `exercises/Split_Squats/0.jpg` |
 | 棒式 | `exercises/Plank/1.jpg` |
