@@ -97,9 +97,9 @@ npm run serve     # 在 http://localhost:8080 開啟
 
 | 動作 | 原始檔案 |
 |---|---|
-| 深蹲 | `exercises/Freehand_Jump_Squat/0.jpg` |
+| 深蹲 | `exercises/Squats_-_With_Bands/1.jpg` |
 | 伏地挺身 | `exercises/Pushups/1.jpg` |
-| 弓箭步 | `exercises/Split_Jump/0.jpg` |
+| 弓箭步 | `exercises/Split_Squats/0.jpg` |
 | 棒式 | `exercises/Plank/1.jpg` |
 
 該專案沒有說明照片最初的拍攝者；若要正式發表，建議改用自行拍攝或 Wikimedia Commons 上授權明確的照片。
