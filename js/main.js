@@ -657,12 +657,50 @@ function flashCenter(text, ms = 800, small = false) {
   }, ms);
 }
 
-function speak(text) {
-  if (!$('voice').checked || !('speechSynthesis' in window)) return;
+// 語音：
+// - iPhone Safari 一定要在「點擊」裡先講過一次，之後從畫面迴圈呼叫才會有聲音（unlockSpeech）
+// - 指定中文語音，避免手機預設用英文語音唸中文而沒聲音
+// - Chrome 在 cancel() 後立刻 speak() 有時會被吃掉，所以稍微延後
+let zhVoice = null;
+function pickVoice() {
+  const vs = speechSynthesis.getVoices();
+  zhVoice =
+    vs.find((v) => /zh[-_]TW/i.test(v.lang)) ??
+    vs.find((v) => /zh[-_](HK|Hant)/i.test(v.lang)) ??
+    vs.find((v) => /^zh/i.test(v.lang)) ??
+    null;
+}
+if ('speechSynthesis' in window) {
+  pickVoice();
+  speechSynthesis.addEventListener?.('voiceschanged', pickVoice);
+}
+
+function utter(text) {
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'zh-TW';
+  u.lang = zhVoice?.lang ?? 'zh-TW';
+  if (zhVoice) u.voice = zhVoice;
+  return u;
+}
+
+let speechUnlocked = false;
+function unlockSpeech() {
+  if (speechUnlocked || !('speechSynthesis' in window) || !$('voice').checked) return;
+  speechUnlocked = true;
+  const u = utter('語音已開啟');
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
+}
+
+function speak(text) {
+  if (!$('voice').checked || !('speechSynthesis' in window)) return;
+  const u = utter(text);
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
+    speechSynthesis.cancel();
+    setTimeout(() => speechSynthesis.speak(u), 60);
+  } else {
+    speechSynthesis.resume();
+    speechSynthesis.speak(u);
+  }
 }
 
 function updateFps(now) {
@@ -725,6 +763,7 @@ function exitFullscreen() {
 document.querySelectorAll('.card').forEach((card) =>
   card.addEventListener('click', () => {
     enterFullscreen();
+    unlockSpeech();
     location.hash = card.dataset.exercise;
     // 在點擊事件裡直接開鏡頭，iOS 才會允許
     showWorkout(card.dataset.exercise);
@@ -737,6 +776,7 @@ $('back').addEventListener('click', () => {
 });
 $('open-camera').addEventListener('click', () => {
   enterFullscreen();
+  unlockSpeech();
   openSource('camera');
 });
 $('file').addEventListener('change', (e) => {
@@ -788,3 +828,7 @@ loadModel().catch((err) => {
   $('model-status').textContent = `模型載入失敗：${err.message}`;
 });
 route();
+$('voice').addEventListener('change', () => {
+  speechUnlocked = false;
+  unlockSpeech();
+});
