@@ -12,50 +12,27 @@
   <section id="page-select" class="page">
     <header class="select-header">
       <h1>健身動作評分</h1>
+      <p class="lead">選今天要練的動作，手機會用 AI 看你的姿勢、即時語音提醒，做完告訴你哪裡要改。</p>
     </header>
-    <div class="cards">
-      <button class="card" data-exercise="squat">
-        <span class="card-media">
-          <img src="img/squat.jpg" alt="深蹲示範照片">
-          <span class="chip">手機直放</span>
-        </span>
-        <span class="card-title">深蹲</span>
-        <span class="card-desc">判斷膝角、軀幹前傾</span>
-      </button>
-      <button class="card" data-exercise="pushup">
-        <span class="card-media">
-          <img src="img/pushup.jpg" alt="伏地挺身示範照片">
-          <span class="chip">手機橫放</span>
-        </span>
-        <span class="card-title">伏地挺身</span>
-        <span class="card-desc">判斷肘角、身體是否成一直線</span>
-      </button>
-      <button class="card" data-exercise="lunge">
-        <span class="card-media">
-          <img src="img/lunge.jpg" alt="弓箭步示範照片">
-          <span class="chip">手機直放</span>
-        </span>
-        <span class="card-title">弓箭步</span>
-        <span class="card-desc">判斷前膝、後膝角度與上半身是否挺直</span>
-      </button>
-      <button class="card" data-exercise="plank">
-        <span class="card-media">
-          <img src="img/plank.jpg" alt="棒式示範照片">
-          <span class="chip">手機橫放 · 計時</span>
-        </span>
-        <span class="card-title">棒式</span>
-        <span class="card-desc">判斷肩、髖、踝是否成一直線，計算維持秒數</span>
-      </button>
-    </div>
+    <h2 class="section-title">今天要練什麼？<small>點卡片加入，可以選好幾個</small></h2>
+    <!-- 動作卡片由 js/main.js 依 exercises.js 產生 -->
+    <div id="cards" class="cards"></div>
+    <section id="history" class="history" hidden>
+      <h2 class="section-title">訓練紀錄<small>只存在這支手機的瀏覽器裡</small></h2>
+      <ul id="history-list" class="history-list"></ul>
+    </section>
     <p id="model-status" class="status"></p>
     <p class="credit">示範照片來源：<a href="https://github.com/yuhonas/free-exercise-db">free-exercise-db</a>（Unlicense 公眾領域）</p>
+    <div class="plan-bar">
+      <button id="start-plan" class="primary" disabled>選好動作就可以開始</button>
+    </div>
   </section>
 
   <!-- 第二頁：錄影與計次 -->
   <section id="page-workout" class="page" hidden>
     <header class="bar">
       <button id="back" class="icon-btn" aria-label="返回">←</button>
-      <h2 id="workout-title">深蹲</h2>
+      <div class="bar-title"><h2 id="workout-title">深蹲</h2><span id="plan-step" class="plan-step"></span></div>
       <button id="flip" class="icon-btn" aria-label="切換前後鏡頭">⟲</button>
     </header>
 
@@ -64,7 +41,7 @@
       <canvas id="overlay"></canvas>
 
       <div id="hud">
-        <div class="count"><span id="count">0</span><small id="count-unit">下</small></div>
+        <div class="count"><span id="count">0</span><small id="count-target"></small><small id="count-unit">下</small></div>
         <div class="metrics">
           <div><span id="key-label">膝角</span><b id="key-angle">–</b></div>
           <div id="extra"></div>
@@ -93,7 +70,18 @@
       <label class="toggle"><input id="voice" type="checkbox" checked> 語音</label>
       <button id="go" class="primary" disabled>結束</button>
       <button id="record" class="small-btn" disabled>錄標準動作</button>
+      <button id="redo" class="small-btn" hidden>再一組</button>
     </footer>
+  </section>
+
+  <!-- 第三頁：今日訓練總結（也用來看過去的紀錄） -->
+  <section id="page-report" class="page" hidden>
+    <header class="bar">
+      <button id="report-back" class="icon-btn" aria-label="回首頁">←</button>
+      <h2>訓練總結</h2>
+      <span class="bar-spacer"></span>
+    </header>
+    <main id="report" class="report"></main>
   </section>
 
   <script type="module" src="js/main.js"></script>

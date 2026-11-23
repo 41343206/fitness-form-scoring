@@ -52,7 +52,11 @@ test('深蹲評分：蹲不夠深 → 提示「再蹲低一點」，分數較低
   const good = scoreRep(ex, squatRep(), [ex.defaultTemplate()]);
   const shallow = scoreRep(ex, squatRep({ bottom: 118 }), [ex.defaultTemplate()]);
   assert.equal(shallow.feedback.id, 'depth');
-  assert.equal(shallow.feedback.feedback, '再蹲低一點');
+  assert.equal(shallow.feedback.feedback, '蹲太淺了，屁股往後坐，蹲到大腿接近平行地面');
+  assert.ok(shallow.feedback.tip.includes('90 度'));
+  // 只差一點的時候換一句比較溫和的
+  const bitHigh = scoreRep(ex, squatRep({ bottom: 108 }), []);
+  assert.equal(bitHigh.feedback.feedback, '再蹲低一點，大腿接近平行地面');
   assert.ok(shallow.score < good.score - 20, `${good.score} vs ${shallow.score}`);
 });
 
@@ -95,7 +99,11 @@ test('summarize：平均分數與最常見的錯誤', () => {
   // 標準 1 下、不標準 2 下（原因都是深度）
   assert.equal(s.standard, 1);
   assert.equal(s.nonStandard, 2);
-  assert.deepEqual(s.issues, [{ label: '深度', times: 2 }]);
+  assert.equal(s.issues.length, 1);
+  assert.equal(s.issues[0].label, '深度');
+  assert.equal(s.issues[0].times, 2);
+  assert.equal(s.issues[0].feedback, '蹲太淺了，屁股往後坐，蹲到大腿接近平行地面');
+  assert.ok(s.issues[0].tip.length > 10);
 });
 
 test('標準與否：總分 ≥ 80 且沒有提示才算標準', () => {
