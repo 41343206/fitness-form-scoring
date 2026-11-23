@@ -13,7 +13,7 @@ import { BUILTIN_TEMPLATES } from './templates.js';
 // dtwFeatures：DTW 比對用的特徵；builtinTemplates：資料集標準動作產生的內建模板（見 templates.js）；
 // defaultTemplate：沒有內建模板時用的理想曲線（弓箭步目前還沒有資料集）。
 // dtwK：DTW 換算分數的寬鬆程度，依資料集設定成「標準動作的中位數約 85 分」。
-// mode: 'hold' 是靜態動作（棒式、靠牆深蹲），不計次，改成計時：holdGood 判斷這一幀姿勢對不對，
+// mode: 'hold' 是靜態動作（棒式），不計次，改成計時：holdGood 判斷這一幀姿勢對不對，
 //   holdFeedback 回傳姿勢不對時的問題 { id, label, feedback（語音）, tip（結果頁說明）}。
 // measure 回傳的 track 是每一幀要記下來、但不顯示在畫面上的數值（例如塌腰程度），評分時可以用。
 // card：首頁卡片的照片、標籤和說明；target：今日課表的預設目標（次數或秒數）。
@@ -29,13 +29,6 @@ function worstHipDrop(rep) {
   let worst = 0;
   for (const f of rep.frames) if (Number.isFinite(f.hipDrop) && Math.abs(f.hipDrop) > Math.abs(worst)) worst = f.hipDrop;
   return worst;
-}
-
-// 臀橋抬到最高（key 最小）那一幀的膝角
-function kneeAtTop(rep) {
-  let best = null;
-  for (const f of rep.frames) if (Number.isFinite(f.膝角) && (best === null || f.key < best.key)) best = f;
-  return best ? best.膝角 : 90;
 }
 
 // 一下理想動作的曲線：從 top 平滑降到 bottom 再回到 top
@@ -300,163 +293,6 @@ export const EXERCISES = {
     },
     valid(m) {
       return m.tilt < 45 && m.elbowBelowShoulder;
-    },
-  },
-  bridge: {
-    name: '臀橋',
-    card: { image: 'img/bridge.jpg', chip: '手機橫放', desc: '判斷臀部抬起的高度、膝蓋角度' },
-    target: 12,
-    // 計次狀態機是「角度往下再回來」，臀橋是髖角往上打開再放下，所以 key 用 360 − 髖角（畫面上顯示髖角）
-    keyLabel: '髖角',
-    showKey: (k) => 360 - k,
-    // 躺著時髖角約 135–150°（看腳放多遠），抬到頂約 170–180°
-    downAngle: 197, // 髖角打開到 ≥ 163° 才算一下
-    upAngle: 207, // 髖角回到 ≤ 153° 算放下
-    tips: ['用手機支架把手機橫放在地上，鏡頭對著身體側面', '仰躺、膝蓋彎曲腳踩地，躺進框框，框變綠就會自動開始'],
-    readyHint: '請仰躺，膝蓋彎起來腳踩地',
-    orientation: 'landscape',
-    axis: 'h',
-    boxJoints: ['ear', 'shoulder', 'hip', 'knee', 'ankle', 'footIndex'],
-    fillRange: [0.4, 0.9],
-    box: lyingBox,
-    measure(j) {
-      const hip = angle(j.shoulder, j.hip, j.knee);
-      return {
-        key: 360 - hip,
-        visibility: minVisibility(j.shoulder, j.hip, j.knee, j.ankle),
-        extra: { 膝角: angle(j.hip, j.knee, j.ankle) },
-        hip,
-        knee: angle(j.hip, j.knee, j.ankle),
-        // 肩到膝的連線接近水平才是躺著（臀橋頂端也只有約 30°）
-        tilt: angleFromHorizontal(j.shoulder, j.knee),
-      };
-    },
-    rules: [
-      {
-        id: 'height', label: '抬臀高度', weight: 50, full: 170, zero: 150, value: (rep) => 360 - rep.minAngle,
-        feedback: '屁股再抬高一點，肩膀到膝蓋成一直線',
-        tip: '臀部抬得不夠高，臀肌沒有收到最緊。用腳跟推地把屁股往上頂，頂端時肩、髖、膝成一直線，夾緊屁股停一下。',
-      },
-      {
-        id: 'knee', label: '膝蓋角度', weight: 25, full: 15, zero: 40, value: (rep) => Math.abs(kneeAtTop(rep) - 90),
-        feedback: (rep) => (kneeAtTop(rep) > 90 ? '腳往屁股靠近一點' : '腳離屁股遠一點'),
-        tip: '腳的位置不對，頂端時膝蓋最好彎成約 90 度。腳太遠會變成大腿後側出力，太近則容易壓到膝蓋。',
-      },
-      {
-        id: 'tempo', label: '節奏', weight: 25, full: 0.6, zero: 0.25, value: (rep) => rep.descentMs / 1000,
-        feedback: '慢慢往上推，不要用甩的',
-        tip: '往上推太快，靠腰的甩動把屁股帶上去。用大約一秒慢慢推上去，感覺是屁股在出力。',
-      },
-    ],
-    dtwFeatures: (f) => [f.key, f.膝角],
-    defaultTemplate() {
-      const key = curve(30, 225, 188), knee = curve(30, 70, 90); // 髖角 135°→172°，膝角 70°→90°
-      return key.map((k, i) => [k, knee[i]]);
-    },
-    ready(m) {
-      return m.tilt < 35 && m.key >= (m.upAt ?? this.upAngle) && m.knee < 130;
-    },
-    valid(m) {
-      return m.tilt < 45 && m.knee < 140;
-    },
-  },
-  situp: {
-    name: '仰臥起坐',
-    card: { image: 'img/situp.jpg', chip: '手機橫放', desc: '判斷坐起的幅度、躺下是否有控制' },
-    target: 12,
-    keyLabel: '髖角',
-    downAngle: 95,
-    upAngle: 115,
-    tips: ['用手機支架把手機橫放在地上，鏡頭對著身體側面', '仰躺、膝蓋彎曲腳踩地，躺進框框，框變綠就會自動開始'],
-    readyHint: '請仰躺，膝蓋彎起來腳踩地',
-    orientation: 'landscape',
-    axis: 'h',
-    boxJoints: ['ear', 'shoulder', 'hip', 'knee', 'ankle', 'footIndex'],
-    fillRange: [0.4, 0.9],
-    box: lyingBox,
-    measure(j) {
-      const knee = angle(j.hip, j.knee, j.ankle);
-      return {
-        key: angle(j.shoulder, j.hip, j.knee),
-        visibility: minVisibility(j.shoulder, j.hip, j.knee, j.ankle),
-        extra: { 膝角: knee },
-        knee,
-        // 上半身（髖到肩）和地面的夾角：躺平約 0°，坐起來約 60° 以上
-        torso: angleFromHorizontal(j.hip, j.shoulder),
-      };
-    },
-    rules: [
-      {
-        id: 'height', label: '坐起幅度', weight: 45, full: 70, zero: 100, value: (rep) => rep.minAngle,
-        feedback: '再坐起來一點，胸口靠近大腿',
-        tip: '坐起的幅度不夠，只做到一半。用腹部的力量把上半身捲起來，坐到胸口靠近大腿。',
-      },
-      {
-        id: 'lower', label: '躺下控制', weight: 30, full: 0.8, zero: 0.3, value: (rep) => (rep.durationMs - rep.descentMs) / 1000,
-        feedback: '躺下時慢慢放，不要直接倒下去',
-        tip: '躺下時直接倒回地面，等於放掉了一半的訓練。往下時用腹部撐住，慢慢一節一節躺回去。',
-      },
-      {
-        id: 'knee', label: '膝蓋彎曲', weight: 25, full: 100, zero: 140, value: (rep) => maxOf(rep, '膝角'),
-        feedback: '膝蓋彎起來，腳掌踩穩地板',
-        tip: '腳伸太直，會變成用大腿前側和腰的力量把身體拉起來。膝蓋彎到約 90 度、腳掌踩穩，腹部才會出力。',
-      },
-    ],
-    dtwFeatures: (f) => [f.key, f.膝角],
-    defaultTemplate() {
-      return curve(30, 125, 65).map((k) => [k, 90]);
-    },
-    ready(m) {
-      return m.torso < 30 && m.key >= (m.upAt ?? this.upAngle) && m.knee < 140;
-    },
-    valid(m) {
-      return m.knee < 150;
-    },
-  },
-  wallsit: {
-    name: '靠牆深蹲',
-    mode: 'hold',
-    card: { image: 'img/wallsit.jpg', chip: '手機直放 · 計時', desc: '背靠牆蹲低維持，判斷膝角和背部是否貼牆' },
-    target: 30,
-    keyLabel: '膝角',
-    tips: ['找一面牆，用手機支架把手機直放在身體側面，高度約在腰部', '背貼牆往下滑到大腿接近平行地面，框變綠就開始計時'],
-    readyHint: '背貼牆往下蹲，大腿接近平行地面',
-    orientation: 'portrait',
-    axis: 'v',
-    boxJoints: ['ear', 'shoulder', 'hip', 'knee', 'ankle', 'footIndex'],
-    fillRange: [0.35, 0.8],
-    // 蹲著比站著矮、比較寬
-    box(w, h) {
-      const bh = h * 0.8;
-      const bw = Math.min(w * 0.9, bh * 0.75);
-      return { x: (w - bw) / 2, y: h - bh - h * 0.07, w: bw, h: bh };
-    },
-    measure(j) {
-      const lean = angleFromVertical(j.hip, j.shoulder);
-      return {
-        key: angle(j.hip, j.knee, j.ankle),
-        visibility: minVisibility(j.shoulder, j.hip, j.knee, j.ankle),
-        extra: { 背部傾斜: lean },
-        lean,
-        upright: j.shoulder.y < j.hip.y,
-      };
-    },
-    // 膝角 75–110° 且背部接近垂直（貼牆）算姿勢正確
-    holdGood(m) {
-      return m.key >= 75 && m.key <= 110 && m.lean < 20;
-    },
-    holdFeedback(m) {
-      if (m.lean >= 20)
-        return { id: 'back', label: '背離開牆', feedback: '背貼回牆上，上半身挺直', tip: '上半身往前傾、背離開牆，壓力會跑到膝蓋和下背。整個背和後腦都貼著牆，只靠腿出力。' };
-      if (m.key > 110)
-        return { id: 'high', label: '蹲不夠低', feedback: '再往下蹲，大腿接近平行地面', tip: '蹲得太高，大腿幾乎沒出力。沿著牆往下滑，到膝蓋彎成約 90 度、大腿和地面平行。' };
-      return { id: 'low', label: '蹲太低', feedback: '太低了，往上一點', tip: '蹲得比 90 度還低，膝蓋負擔變大。往上一點，停在大腿和地面平行的高度。' };
-    },
-    ready(m) {
-      return m.upright && m.key <= 120 && m.lean < 25;
-    },
-    valid(m) {
-      return m.upright && m.key < 150;
     },
   },
 };
