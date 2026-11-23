@@ -51,11 +51,12 @@ test('棒式：直線算正確；塌腰、翹臀各給不同提示', () => {
 
   const sag = ex.measure(plank(130));
   assert.ok(ex.valid(sag) && !ex.holdGood(sag));
-  assert.equal(ex.holdFeedback(sag), '核心收緊，不要塌腰');
+  assert.equal(ex.holdFeedback(sag).feedback, '核心收緊，不要塌腰');
+  assert.equal(ex.holdFeedback(sag).label, '塌腰');
 
   const pike = ex.measure(plank(65));
   assert.ok(!ex.holdGood(pike));
-  assert.equal(ex.holdFeedback(pike), '臀部放低一點');
+  assert.equal(ex.holdFeedback(pike).feedback, '屁股放低一點');
 
   // 站著（肩到踝是垂直的）不算棒式
   const standing = ex.measure({ ...plank(100), shoulder: P(200, 0), hip: P(200, 100), ankle: P(200, 200), elbow: P(200, 50) });
@@ -108,9 +109,9 @@ test('弓箭步評分：標準高分；前腳太淺、後膝沒下去各給提�
   assert.equal(good.feedback, null);
 
   const shallow = scoreRep(ex, lungeRep({ front: 125 }), [ex.defaultTemplate()]);
-  assert.equal(shallow.feedback.feedback, '前腳再蹲低一點');
+  assert.equal(shallow.feedback.feedback, '前腳再蹲低一點，前膝彎到約 90 度');
   assert.ok(shallow.score < good.score - 20);
 
   const backHigh = scoreRep(ex, lungeRep({ back: 140 }), [ex.defaultTemplate()]);
-  assert.equal(backHigh.feedback.feedback, '後腳膝蓋再往下');
+  assert.equal(backHigh.feedback.feedback, '後腳膝蓋往地板靠近');
 });

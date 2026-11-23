@@ -8,18 +8,28 @@ import { BUILTIN_TEMPLATES } from './templates.js';
 // measure 會分別用 2D 像素座標和 3D 世界座標各算一次，再依拍攝角度混合（見 pose-math.js 的 weight3D），
 // 所以這裡的計算要同時適用 2D（沒有 z）和 3D。
 // rules：每一下的評分規則（見 scoring.js），value 從這一下的資料算出數值，
-//   達到 full 得滿分、到 zero 得 0 分；feedback 是扣分最多時的語音提示。
+//   達到 full 得滿分、到 zero 得 0 分；feedback 是扣分最多時的語音提示（可以是依這一下資料決定的函式，
+//   例如伏地挺身分「塌腰」和「翹臀」），tip 是結果頁上較完整的教練說明（為什麼要改、怎麼改）。
 // dtwFeatures：DTW 比對用的特徵；builtinTemplates：資料集標準動作產生的內建模板（見 templates.js）；
 // defaultTemplate：沒有內建模板時用的理想曲線（弓箭步目前還沒有資料集）。
 // dtwK：DTW 換算分數的寬鬆程度，依資料集設定成「標準動作的中位數約 85 分」。
 // mode: 'hold' 是靜態動作（棒式），不計次，改成計時：holdGood 判斷這一幀姿勢對不對，
-//   holdFeedback 是姿勢不對時的語音提示。
+//   holdFeedback 回傳姿勢不對時的問題 { id, label, feedback（語音）, tip（結果頁說明）}。
+// measure 回傳的 track 是每一幀要記下來、但不顯示在畫面上的數值（例如塌腰程度），評分時可以用。
+// card：首頁卡片的照片、標籤和說明；target：今日課表的預設目標（次數或秒數）。
 // downAngle 是「算一下」的最低門檻，刻意放寬：蹲不夠低也會計次，再由評分判斷標準與否（見 scoring.js 的 STANDARD_SCORE），
 // 只擋掉兩下之間調整姿勢這類很小的動作。
 // 門檻是起始參考值，之後要用實測資料調整（見 docs/plan.md 第 4 節）。
 
 const maxOf = (rep, k) => Math.max(...rep.frames.map((f) => f[k]).filter(Number.isFinite));
 const minOf = (rep, k) => Math.min(...rep.frames.map((f) => f[k]).filter(Number.isFinite));
+
+// 伏地挺身身體最不直的那一幀是塌腰（正）還是翹臀（負）
+function worstHipDrop(rep) {
+  let worst = 0;
+  for (const f of rep.frames) if (Number.isFinite(f.hipDrop) && Math.abs(f.hipDrop) > Math.abs(worst)) worst = f.hipDrop;
+  return worst;
+}
 
 // 一下理想動作的曲線：從 top 平滑降到 bottom 再回到 top
 const curve = (n, top, bottom) =>
@@ -41,6 +51,8 @@ export function repThresholds(ex, w = 0) {
 export const EXERCISES = {
   squat: {
     name: '深蹲',
+    card: { image: 'img/squat.jpg', chip: '手機直放', desc: '判斷膝角、軀幹前傾' },
+    target: 10,
     keyLabel: '膝角',
     downAngle: 140,
     upAngle: 160,
@@ -77,9 +89,21 @@ export const EXERCISES = {
     },
     // 節奏的滿分門檻依資料集 good 動作下蹲時間的第 20 百分位設定（深蹲 0.6 秒、伏地挺身 0.4 秒）
     rules: [
-      { id: 'depth', label: '深度', feedback: '再蹲低一點', weight: 45, full: 90, zero: 125, value: (rep) => rep.minAngle },
-      { id: 'lean', label: '軀幹', feedback: '胸口挺起來', weight: 30, full: 45, zero: 65, value: (rep) => maxOf(rep, '軀幹前傾') },
-      { id: 'tempo', label: '節奏', feedback: '下蹲慢一點', weight: 25, full: 0.6, zero: 0.3, value: (rep) => rep.descentMs / 1000 },
+      {
+        id: 'depth', label: '深度', weight: 45, full: 90, zero: 125, value: (rep) => rep.minAngle,
+        feedback: (rep) => (rep.minAngle > 115 ? '蹲太淺了，屁股往後坐，蹲到大腿接近平行地面' : '再蹲低一點，大腿接近平行地面'),
+        tip: '蹲得不夠深，臀腿沒有完整出力。想像往後坐到椅子上，膝蓋彎到約 90 度、大腿接近和地面平行再站起來。',
+      },
+      {
+        id: 'lean', label: '軀幹', weight: 30, full: 45, zero: 65, value: (rep) => maxOf(rep, '軀幹前傾'),
+        feedback: '胸口挺起來，背不要往前倒',
+        tip: '上半身往前倒太多，壓力會跑到下背。眼睛看前方、胸口挺起，重心放在腳跟到腳掌中間，不要壓在腳尖。',
+      },
+      {
+        id: 'tempo', label: '節奏', weight: 25, full: 0.6, zero: 0.3, value: (rep) => rep.descentMs / 1000,
+        feedback: '下蹲慢一點，心裡數兩秒',
+        tip: '下蹲太快，靠慣性掉下去，膝蓋容易受衝擊。下去時慢慢數「一、二」，到底再穩穩站起來。',
+      },
     ],
     dtwFeatures: (f) => [f.key, f.軀幹前傾],
     builtinTemplates: BUILTIN_TEMPLATES.squat,
@@ -97,6 +121,8 @@ export const EXERCISES = {
   },
   pushup: {
     name: '伏地挺身',
+    card: { image: 'img/pushup.jpg', chip: '手機橫放', desc: '判斷肘角、身體是否成一直線' },
+    target: 10,
     keyLabel: '肘角',
     downAngle: 135,
     upAngle: 150,
@@ -115,6 +141,8 @@ export const EXERCISES = {
         extra: {
           身體直線: bodyLine,
         },
+        // 正值＝塌腰，負值＝翹臀；用來分辨身體沒打直是哪一種
+        track: { hipDrop: hipDrop(j) },
         bodyLine,
         // 肩到腳踝的連線要接近水平，才是趴著的姿勢
         tilt: angleFromHorizontal(j.shoulder, j.ankle),
@@ -122,9 +150,21 @@ export const EXERCISES = {
       };
     },
     rules: [
-      { id: 'depth', label: '深度', feedback: '再往下一點', weight: 40, full: 90, zero: 125, value: (rep) => rep.minAngle },
-      { id: 'line', label: '身體直線', feedback: '核心收緊，身體保持一直線', weight: 40, full: 165, zero: 140, value: (rep) => minOf(rep, '身體直線') },
-      { id: 'tempo', label: '節奏', feedback: '慢一點，控制速度', weight: 20, full: 0.4, zero: 0.2, value: (rep) => rep.descentMs / 1000 },
+      {
+        id: 'depth', label: '深度', weight: 40, full: 90, zero: 125, value: (rep) => rep.minAngle,
+        feedback: '胸口再往下，手肘彎到約 90 度',
+        tip: '下去的幅度不夠，胸肌和手臂練不到。身體整片往下，胸口接近地面、手肘彎到約 90 度再推起來。',
+      },
+      {
+        id: 'line', label: '身體直線', weight: 40, full: 165, zero: 140, value: (rep) => minOf(rep, '身體直線'),
+        feedback: (rep) => (worstHipDrop(rep) > 0 ? '腰塌下去了，收緊肚子和屁股' : '屁股翹太高，身體壓成一直線'),
+        tip: '身體沒有成一直線。腰往下塌會壓迫下背，屁股翹高則是在偷力。收緊腹部和臀部，讓頭、肩、髖、腳踝在同一條線上。',
+      },
+      {
+        id: 'tempo', label: '節奏', weight: 20, full: 0.4, zero: 0.2, value: (rep) => rep.descentMs / 1000,
+        feedback: '下去慢一點，控制速度',
+        tip: '下去太快，等於讓身體自己掉下去。用大約一秒慢慢下去，肩膀比較不容易受傷，肌肉也練得到。',
+      },
     ],
     dtwFeatures: (f) => [f.key, f.身體直線],
     builtinTemplates: BUILTIN_TEMPLATES.pushup,
@@ -141,6 +181,8 @@ export const EXERCISES = {
   },
   lunge: {
     name: '弓箭步',
+    card: { image: 'img/lunge.jpg', chip: '手機直放', desc: '判斷前膝、後膝角度與上半身是否挺直' },
+    target: 10,
     keyLabel: '前膝角',
     downAngle: 140,
     upAngle: 155,
@@ -180,10 +222,26 @@ export const EXERCISES = {
       };
     },
     rules: [
-      { id: 'depth', label: '前腳深度', feedback: '前腳再蹲低一點', weight: 40, full: 95, zero: 130, value: (rep) => rep.minAngle },
-      { id: 'back', label: '後腳', feedback: '後腳膝蓋再往下', weight: 25, full: 100, zero: 140, value: (rep) => minOf(rep, '後膝') },
-      { id: 'lean', label: '軀幹', feedback: '上半身挺直', weight: 20, full: 20, zero: 40, value: (rep) => maxOf(rep, '軀幹前傾') },
-      { id: 'tempo', label: '節奏', feedback: '慢一點，控制速度', weight: 15, full: 0.7, zero: 0.3, value: (rep) => rep.descentMs / 1000 },
+      {
+        id: 'depth', label: '前腳深度', weight: 40, full: 95, zero: 130, value: (rep) => rep.minAngle,
+        feedback: '前腳再蹲低一點，前膝彎到約 90 度',
+        tip: '前腳蹲得不夠低。身體垂直往下沉，前腳膝蓋彎到約 90 度、大腿接近和地面平行。',
+      },
+      {
+        id: 'back', label: '後腳', weight: 25, full: 100, zero: 140, value: (rep) => minOf(rep, '後膝'),
+        feedback: '後腳膝蓋往地板靠近',
+        tip: '後腳幾乎沒彎，變成只有前腳在出力。往下時讓後腳膝蓋朝地板靠近，停在快碰到地的高度。',
+      },
+      {
+        id: 'lean', label: '軀幹', weight: 20, full: 20, zero: 40, value: (rep) => maxOf(rep, '軀幹前傾'),
+        feedback: '上半身挺直，不要往前倒',
+        tip: '上半身往前倒，重心跑到前腳膝蓋。肩膀保持在髖部正上方，像有一條線把頭往上拉。',
+      },
+      {
+        id: 'tempo', label: '節奏', weight: 15, full: 0.7, zero: 0.3, value: (rep) => rep.descentMs / 1000,
+        feedback: '慢一點，控制速度',
+        tip: '下去太快，膝蓋容易晃。往下時慢慢數兩秒，保持平衡再起身。',
+      },
     ],
     dtwFeatures: (f) => [f.key, f.後膝],
     defaultTemplate() {
@@ -199,6 +257,8 @@ export const EXERCISES = {
   },
   plank: {
     name: '棒式',
+    card: { image: 'img/plank.jpg', chip: '手機橫放 · 計時', desc: '判斷肩、髖、踝是否成一直線，計算維持秒數' },
+    target: 30,
     mode: 'hold',
     keyLabel: '身體直線',
     tips: ['用手機支架把手機橫放在地上，鏡頭對著身體側面', '用手肘撐地趴進框框，身體打直，框變綠就開始計時'],
@@ -224,7 +284,9 @@ export const EXERCISES = {
       return m.key >= 165;
     },
     holdFeedback(m) {
-      return m.hipDrop > 0 ? '核心收緊，不要塌腰' : '臀部放低一點';
+      return m.hipDrop > 0
+        ? { id: 'sag', label: '塌腰', feedback: '核心收緊，不要塌腰', tip: '腰往下塌，下背在承受重量。肚子往內收、屁股夾緊，讓肩、髖、腳踝成一直線。' }
+        : { id: 'pike', label: '翹臀', feedback: '屁股放低一點', tip: '屁股翹太高，核心在偷懶。把臀部放低到和肩膀、腳踝同一條線，感覺肚子在出力。' };
     },
     ready(m) {
       return m.tilt < 35 && m.elbowBelowShoulder && m.key >= 160;

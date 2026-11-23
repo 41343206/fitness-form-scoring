@@ -57,7 +57,10 @@ button:disabled { opacity: 0.4; cursor: default; }
   padding-bottom: max(20px, env(safe-area-inset-bottom));
   overflow-y: auto;
 }
-.select-header h1 { margin: 28px 0 28px; font-size: 32px; font-weight: 800; letter-spacing: 1px; }
+.select-header h1 { margin: 28px 0 10px; font-size: 32px; font-weight: 800; letter-spacing: 1px; }
+.lead { margin: 0 0 24px; color: var(--muted); font-size: 16px; line-height: 1.6; }
+.section-title { margin: 8px 0 16px; font-size: 20px; font-weight: 700; }
+.section-title small { margin-left: 8px; font-size: 14px; font-weight: 400; color: var(--muted); }
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -86,6 +89,35 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .card:active .card-media { border-color: var(--accent); transform: scale(0.98); }
+.card-wrap.selected .card-media { border-color: var(--accent); }
+.pick {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #000;
+  font-size: 14px;
+  font-weight: 700;
+}
+.pick:empty { display: none; }
+.target { display: flex; align-items: center; gap: 10px; margin: 10px 4px 0; color: var(--muted); }
+.target .step { width: 40px; height: 40px; padding: 0; font-size: 20px; border-radius: 50%; }
+.target b { min-width: 64px; text-align: center; color: var(--fg); font-size: 18px; }
+/* 首頁底部的開始按鈕：捲動時固定在最下面 */
+.plan-bar {
+  position: sticky;
+  bottom: 0;
+  margin: 24px -20px calc(-1 * max(20px, env(safe-area-inset-bottom)));
+  padding: 12px 20px max(16px, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, #000 30%);
+}
+.plan-bar .primary { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history { margin-top: 32px; }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.history-item { width: 100%; display: flex; gap: 12px; text-align: left; background: var(--card); }
+.history-item span:first-child { color: var(--muted); white-space: nowrap; }
 .chip {
   position: absolute;
   top: 10px;
@@ -113,6 +145,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 .bar h2 { margin: 0; font-size: 18px; }
+.bar-title { display: flex; align-items: baseline; gap: 8px; }
+.plan-step { color: var(--muted); font-size: 14px; }
+.plan-step:empty { display: none; }
 .bar-spacer { width: 64px; }
 .icon-btn { font-size: 20px; padding: 8px 12px; min-width: 44px; }
 .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); width: 64px; }
@@ -147,6 +182,8 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   line-height: 1;
 }
 .count small { font-size: 18px; margin-left: 4px; color: var(--muted); }
+.count #count-target { margin-left: 0; font-size: 26px; }
+.count #count-target:empty { display: none; }
 
 .metrics {
   position: absolute;
@@ -245,6 +282,7 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 
 /* 結果頁：總結＋每一下的分數 */
 .summary {
+  z-index: 5;
   position: absolute;
   inset: 16px;
   overflow-y: auto;
@@ -295,7 +333,8 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   }
   #page-workout header.bar { grid-row: 1; padding-top: max(8px, env(safe-area-inset-top)); }
   #page-workout footer.bar { grid-row: 3; justify-content: flex-end; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
-  #page-workout header.bar h2 { order: -1; font-size: 16px; text-align: center; }
+  #page-workout header.bar .bar-title { order: -1; text-align: center; }
+  #page-workout header.bar h2 { font-size: 16px; }
   #page-workout header.bar .icon-btn { width: 100%; }
   #page-workout footer.bar .primary { width: 100%; padding: 12px 8px; font-size: 17px; }
   #page-workout footer.bar .small-btn { width: 100%; }
@@ -312,4 +351,42 @@ footer.bar { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .panel { gap: 10px; padding: 12px; }
   .tips { line-height: 1.5; font-size: 14px; }
   .summary { inset: 10px; padding: 14px; }
+}
+
+/* 結果頁的教練回饋：哪個地方有問題、出現幾次、怎麼改 */
+.coach { margin-top: 18px; padding: 14px; border-radius: 12px; background: rgba(255, 176, 32, 0.12); }
+.coach.good { background: rgba(61, 220, 132, 0.12); }
+.coach h3 { margin: 0 0 8px; font-size: 17px; }
+.coach p { margin: 4px 0 0; font-size: 14px; line-height: 1.6; color: #ccc; }
+.issue + .issue { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.issue-head { display: flex; justify-content: space-between; }
+.issue-head span { color: var(--warn); }
+.issue-cue { margin-top: 2px; color: var(--warn); font-size: 15px; }
+.sum-details { margin-top: 16px; }
+.sum-details summary { cursor: pointer; color: var(--muted); font-size: 15px; }
+
+/* 第三頁：訓練總結 */
+#page-report { background: #000; }
+.report { flex: 1; overflow-y: auto; padding: 8px 16px max(24px, env(safe-area-inset-bottom)); }
+.report .sum-head { margin: 8px 0 16px; }
+.report-date { color: var(--muted); font-size: 14px; }
+.set { margin-top: 16px; padding: 16px; border-radius: 16px; background: var(--card); }
+.set-name { margin: 0 0 8px; font-size: 20px; }
+.set .sum-head { text-align: left; margin: 0; font-size: 16px; }
+.set .sum-head .sum-big { font-size: 24px; }
+.report-note { margin: 24px 4px 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+/* 手機：動作卡片排兩欄，七個動作不用滑太久 */
+@media (max-width: 600px) {
+  .cards { grid-template-columns: 1fr 1fr; gap: 18px 12px; }
+  .card-media { border-radius: 14px; }
+  .chip, .pick { top: 6px; padding: 3px 8px; font-size: 11px; }
+  .chip { right: 6px; }
+  .pick { left: 6px; }
+  .card-title { margin-top: 8px; font-size: 18px; }
+  .card-desc { font-size: 13px; line-height: 1.4; }
+  .target { gap: 6px; margin-top: 8px; }
+  .target > span { display: none; }
+  .target .step { width: 34px; height: 34px; font-size: 18px; }
+  .target b { min-width: 0; flex: 1; font-size: 16px; }
 }

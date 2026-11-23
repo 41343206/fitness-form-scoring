@@ -1,9 +1,10 @@
-import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 import { pickSide, sideJoints, worldJoints, viewAngle, weight3D, blendMeasures, Smoother, HoldTimer, placement } from './pose-math.js';
 import { RepCounter, HoldTracker } from './rep-counter.js';
 import { EXERCISES, repThresholds } from './exercises.js';
 import { scoreRep, summarize, repSequence } from './scoring.js';
 
+// MediaPipe 在需要時才載入：CDN 連不上時首頁仍然能顯示、選課表
+const VISION_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const MIN_VISIBILITY = 0.5;
@@ -52,29 +53,54 @@ let lastGuide = { text: '', at: 0 };
 let results = []; // 這一組每一下的評分
 let templates = []; // DTW 比對用的標準動作
 let recording = null; // 錄製標準動作時的暫存：{ reps: [] }
+let holdIssueFrames = {}; // 靜態動作：每種錯誤出現的幀數（結果頁換算成秒數）
+let holdBadFrames = 0;
+let standardStreak = 0; // 連續幾下標準，用來偶爾稱讚
+let leftAfterDone = false; // 做完一組後有沒有離開過框（只做一個動作時，走回框擺好姿勢就再來一組）
+
+// 今日課表：使用者在首頁選的動作與目標，依序做完；每做完一組就存進訓練紀錄
+const HISTORY_KEY = 'history';
+const HISTORY_MAX = 30;
+let selection = []; // 首頁選了哪些動作：[{ id, target }]，依點選順序
+let plan = null; // 進行中的課表：{ items: [{ id, target }], index, session }
+let reportSession = null; // 總結頁正在看的那一次訓練
 
 // ---------- 頁面切換 ----------
 
 function route() {
   const id = location.hash.slice(1);
   if (EXERCISES[id]) showWorkout(id);
+  else if (id === 'report' && reportSession) showReport(reportSession);
   else showSelect();
+}
+
+function showPage(name) {
+  for (const p of ['select', 'workout', 'report']) $(`page-${p}`).hidden = p !== name;
 }
 
 function showSelect() {
   stopAll();
   exerciseId = null;
-  $('page-workout').hidden = true;
-  $('page-select').hidden = false;
+  plan = null;
+  renderHistory();
+  showPage('select');
 }
 
 function showWorkout(id) {
+  if (exerciseId === id && !$('page-workout').hidden) return;
+  if (exerciseId !== id) stopAll();
+  // 直接打開某個動作的網址（沒有經過首頁選課表）就當作只做這一個
+  if (!plan || plan.items[plan.index]?.id !== id) plan = newPlan([{ id, target: EXERCISES[id].target }]);
+  setupExercise(id);
+  showPage('workout');
+}
+
+// 換到某個動作：更新畫面上的名稱、目標、提示與模板（鏡頭不用重開）
+function setupExercise(id) {
   const ex = EXERCISES[id];
-  if (exerciseId !== id) {
-    stopAll();
-    exerciseId = id;
-  }
+  exerciseId = id;
   $('workout-title').textContent = ex.name;
+  $('plan-step').textContent = plan && plan.items.length > 1 ? `${plan.index + 1}/${plan.items.length}` : '';
   $('key-label').textContent = ex.keyLabel;
   // 棒式：大數字是「姿勢正確的秒數」，另一欄是正確比例；不用錄標準動作
   const isHold = ex.mode === 'hold';
@@ -85,8 +111,6 @@ function showWorkout(id) {
   templates = loadTemplates(id);
   updateRecordButton();
   resetCounter();
-  $('page-select').hidden = true;
-  $('page-workout').hidden = false;
 }
 
 // ---------- 模型與鏡頭 ----------
@@ -94,6 +118,7 @@ function showWorkout(id) {
 function loadModel() {
   if (!landmarkerPromise) {
     landmarkerPromise = (async () => {
+      const { PoseLandmarker, FilesetResolver } = await import(VISION_URL);
       const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
       const options = {
         baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
@@ -235,6 +260,11 @@ function resetCounter() {
   $('last-score').textContent = '–';
   delete $('last-score').dataset.standard;
   results = [];
+  holdIssueFrames = {};
+  holdBadFrames = 0;
+  standardStreak = 0;
+  const target = plan?.items[plan.index]?.target;
+  $('count-target').textContent = target ? `/${target}` : '';
   $('key-angle').textContent = '–';
   $('extra').innerHTML = '';
 }
@@ -250,35 +280,71 @@ function startSet() {
   showCenter('');
   hideSummary();
   setGoButton('結束');
+  $('redo').hidden = true;
+  $('record').hidden = EXERCISES[exerciseId].mode === 'hold';
 }
 
 function finishSet() {
   phase = 'done';
   lockedSide = null;
+  leftAfterDone = false;
   showHint('');
   setFrameState('');
   stopRecording();
   readyTimer.reset();
   showCenter('');
-  if (EXERCISES[exerciseId].mode === 'hold') {
-    const total = Math.round(hold.totalMs / 1000), good = Math.round(hold.goodMs / 1000);
-    showSummary([`維持 ${total} 秒`, `姿勢正確 ${good} 秒（${hold.percent()}%）`], []);
-    speak(`維持 ${total} 秒，姿勢正確 ${good} 秒`);
-  } else {
-    const sum = summarize(results);
-    const lines = [`完成 ${counter.count} 下`];
-    if (sum.count) lines.push(`標準 ${sum.standard} 下 · 不標準 ${sum.nonStandard} 下`);
-    if (sum.avg !== null) lines.push(`平均 ${sum.avg} 分`);
-    if (sum.issues.length) lines.push(`不標準原因：${sum.issues.map((i) => `${i.label} ${i.times}`).join('、')}`);
-    if (sum.topIssue) lines.push(`建議：${sum.topIssue.feedback}`);
-    showSummary(lines, results);
-    // 人離手機有段距離，用語音唸出重點
-    let say = `完成 ${counter.count} 下`;
-    if (sum.count) say += `，標準 ${sum.standard} 下，平均 ${sum.avg} 分`;
-    if (sum.topIssue) say += `，建議${sum.topIssue.feedback}`;
-    speak(say);
+  const ex = EXERCISES[exerciseId];
+  const record = setRecord();
+  if (plan) {
+    plan.session.sets.push(record);
+    saveSession(plan.session);
   }
-  setGoButton('再一組');
+  showSummary(record);
+  // 人離手機有段距離，用語音唸出重點：做了多少、最需要改的地方、下一步
+  let say;
+  if (ex.mode === 'hold') {
+    say = `維持 ${record.totalSec} 秒，姿勢正確 ${record.goodSec} 秒`;
+  } else {
+    say = `完成 ${record.count} 下`;
+    if (record.count) say += `，標準 ${record.standard} 下，平均 ${record.avg} 分`;
+  }
+  const top = record.issues.find((i) => i.id !== 'overall');
+  say += top ? `。最需要注意${top.label}，${top.feedback}` : record.count || record.goodSec ? '。動作很標準，做得好' : '';
+  const next = nextItem();
+  if (next) say += `。下一個是${EXERCISES[next.id].name}，請到手機按下一個`;
+  speak(say);
+  updateDoneButtons();
+}
+
+// 這一組的紀錄（存進訓練紀錄、顯示在結果頁）
+function setRecord() {
+  const ex = EXERCISES[exerciseId];
+  const base = { id: exerciseId, name: ex.name, mode: ex.mode ?? 'reps', target: plan?.items[plan.index]?.target ?? null, at: new Date().toISOString() };
+  if (ex.mode === 'hold') {
+    const badMs = hold.totalMs - hold.goodMs;
+    const issues = Object.values(holdIssueFrames)
+      .map((it) => ({ ...it, seconds: Math.round((badMs * it.frames) / Math.max(1, holdBadFrames) / 1000) }))
+      .filter((it) => it.seconds >= 1)
+      .sort((a, b) => b.seconds - a.seconds)
+      .map(({ frames, ...it }) => it);
+    return { ...base, totalSec: Math.round(hold.totalMs / 1000), goodSec: Math.round(hold.goodMs / 1000), percent: hold.percent(), issues };
+  }
+  const sum = summarize(results);
+  return {
+    ...base,
+    count: counter.count,
+    standard: sum.standard,
+    nonStandard: sum.nonStandard,
+    avg: sum.avg,
+    issues: sum.issues,
+    reps: results.map((r) => ({
+      index: r.index,
+      score: r.score,
+      standard: r.standard,
+      dtwScore: r.dtwScore,
+      lost: r.parts.filter((p) => p.fraction < 1).map((p) => ({ label: p.label, points: Math.round(p.weight * (1 - p.fraction)) })),
+    })),
+  };
 }
 
 // 有沒有做了東西：自動結束只在做過至少一下（棒式至少 1 秒）之後才觸發
@@ -286,19 +352,51 @@ function hasProgress() {
   return EXERCISES[exerciseId].mode === 'hold' ? hold.goodMs >= 1000 : counter.count > 0;
 }
 
-// 結果頁：上面是總結，下面列出每一下的分數與扣分項目
-function showSummary(lines, reps) {
-  const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
-  const head = `<div class="sum-head">${lines.map((l, i) => `<div class="${i === 0 ? 'sum-big' : ''}">${esc(l)}</div>`).join('')}</div>`;
-  const rows = reps.map((r) => {
-    const lost = r.parts.filter((p) => p.fraction < 1).map((p) => `${p.label} −${Math.round(p.weight * (1 - p.fraction))}`);
-    if (r.dtwScore !== null) lost.push(`動作曲線 ${r.dtwScore} 分`);
-    return `<li class="${r.standard ? 'ok' : 'ng'}"><span class="sum-idx">第 ${r.index} 下</span><b>${r.score} 分</b><span class="sum-tag">${r.standard ? '標準' : '不標準'}</span><span class="sum-detail">${esc(lost.join(' · ') || '沒有扣分')}</span></li>`;
-  }).join('');
+// 做完一組的結果（錄影頁上）：上面是總結，接著是「哪裡要改」，最後列出每一下的分數與扣分
+function showSummary(record) {
   const el = $('summary');
-  el.innerHTML = head + (rows ? `<ol class="sum-reps">${rows}</ol>` : '');
+  el.innerHTML = setHTML(record);
   el.scrollTop = 0;
   el.hidden = false;
+}
+
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// 一組的結果 HTML，錄影頁和總結頁共用
+function setHTML(r, { title = false } = {}) {
+  const head = [];
+  if (r.mode === 'hold') {
+    head.push(`<div class="sum-big">維持 ${r.totalSec} 秒</div>`);
+    head.push(`<div>姿勢正確 ${r.goodSec} 秒（${r.percent}%）${r.target ? ` · 目標 ${r.target} 秒` : ''}</div>`);
+  } else {
+    head.push(`<div class="sum-big">完成 ${r.count} 下</div>`);
+    if (r.count) head.push(`<div>標準 ${r.standard} 下 · 不標準 ${r.nonStandard} 下 · 平均 ${r.avg} 分</div>`);
+    else if (r.target) head.push(`<div>目標 ${r.target} 下</div>`);
+  }
+  let coach;
+  if (r.issues.length) {
+    coach = `<div class="coach"><h3>要改進的地方</h3>${r.issues
+      .map(
+        (i) =>
+          `<div class="issue"><div class="issue-head"><b>${esc(i.label)}</b><span>${r.mode === 'hold' ? `${i.seconds} 秒` : `${i.times} 下`}</span></div>` +
+          `<div class="issue-cue">「${esc(i.feedback)}」</div><p>${esc(i.tip)}</p></div>`,
+      )
+      .join('')}</div>`;
+  } else if (r.count || r.goodSec) {
+    coach = `<div class="coach good"><h3>做得很好</h3><p>每一下都符合標準，保持這個姿勢和速度。</p></div>`;
+  } else {
+    coach = '';
+  }
+  const rows = (r.reps ?? [])
+    .map((rep) => {
+      const lost = rep.lost.map((l) => `${l.label} −${l.points}`);
+      if (rep.dtwScore !== null) lost.push(`動作曲線 ${rep.dtwScore} 分`);
+      return `<li class="${rep.standard ? 'ok' : 'ng'}"><span class="sum-idx">第 ${rep.index} 下</span><b>${rep.score} 分</b><span class="sum-tag">${rep.standard ? '標準' : '不標準'}</span><span class="sum-detail">${esc(lost.join(' · ') || '沒有扣分')}</span></li>`;
+    })
+    .join('');
+  const list = rows ? `<details class="sum-details"${title ? '' : ' open'}><summary>每一下的分數</summary><ol class="sum-reps">${rows}</ol></details>` : '';
+  const name = title ? `<h3 class="set-name">${esc(r.name)}</h3>` : '';
+  return `${name}<div class="sum-head">${head.join('')}</div>${coach}${list}`;
 }
 
 function hideSummary() {
@@ -309,6 +407,19 @@ function setGoButton(label) {
   const btn = $('go');
   btn.textContent = label;
   btn.classList.toggle('stop', label === '結束');
+}
+
+// 課表的下一個動作（沒有就回傳 null）
+function nextItem() {
+  return plan && plan.index < plan.items.length - 1 ? plan.items[plan.index + 1] : null;
+}
+
+// 做完一組後的按鈕：主按鈕是「下一個動作」或「看今日總結」，旁邊是「再一組」
+function updateDoneButtons() {
+  const next = nextItem();
+  setGoButton(next ? `下一個：${EXERCISES[next.id].name}` : '看今日總結');
+  $('record').hidden = true;
+  $('redo').hidden = false;
 }
 
 // ---------- 每一幀 ----------
@@ -367,8 +478,11 @@ function handleResult(result, now) {
   }
 
   if (phase === 'done') {
-    // 看完結果再走回框內擺好預備姿勢，就自動開始下一組
-    const posed = !fromFile && inBox && ex.ready(m);
+    // 只做一個動作時：看完結果、離開框再走回來擺好預備姿勢，就自動再來一組。
+    // 課表還有下一個動作時不自動開始（下一個動作可能要換手機方向），要按「下一個」。
+    if (!inBox) leftAfterDone = true;
+    const auto = !fromFile && leftAfterDone && !nextItem();
+    const posed = auto && inBox && ex.ready(m);
     drawBox(box, posed ? 'good' : 'idle');
     if (lms) drawSkeleton(lms, side);
     if (readyTimer.update(posed, now)) startSet();
@@ -436,7 +550,7 @@ function handleResult(result, now) {
     return;
   }
 
-  const rep = counter.update(m.key, now, m.extra);
+  const rep = counter.update(m.key, now, { ...m.extra, ...m.track });
   if (rep) onRep(rep, now);
   window.__app = { counter, phase, key: m.key, extra: m.extra, side, place };
 }
@@ -452,15 +566,22 @@ function handleHold(ex, m, now) {
     holdBadSince = null;
   } else {
     if (holdBadSince === null) holdBadSince = now;
-    const text = ex.holdFeedback(m);
-    showHint(text);
+    const issue = ex.holdFeedback(m);
+    holdBadFrames += 1;
+    (holdIssueFrames[issue.id] ??= { ...issue, frames: 0 }).frames += 1;
+    showHint(issue.feedback);
     if (now - holdBadSince >= HOLD_FEEDBACK_MS && now - holdLastFeedback >= HOLD_FEEDBACK_GAP_MS) {
-      speak(text);
+      speak(issue.feedback);
       holdLastFeedback = now;
     }
   }
+  const target = plan?.items[plan.index]?.target;
+  if (target && secs >= target) {
+    finishSet();
+    return;
+  }
   if (secs >= holdNextAnnounce) {
-    speak(`${secs} 秒`);
+    speak(target ? `${secs} 秒，還有 ${target - secs} 秒` : `${secs} 秒`);
     holdNextAnnounce += HOLD_ANNOUNCE_S;
   }
 }
@@ -522,8 +643,19 @@ function onRep(rep, now) {
   results.push({ ...result, index: rep.index });
   $('last-score').textContent = `${result.score} 分`;
   $('last-score').dataset.standard = result.standard ? 'yes' : 'no';
-  speak(result.feedback ? `${rep.index}，${result.feedback.feedback}` : String(rep.index));
   window.__results = results;
+  const target = plan?.items[plan.index]?.target;
+  if (target && rep.index >= target) {
+    finishSet(); // 到目標次數自動結束，總結裡會講這一下
+    return;
+  }
+  // 每一下報數；有問題就講這個動作專屬的提示，連續 3 下標準就稱讚一次
+  standardStreak = result.standard ? standardStreak + 1 : 0;
+  let say = String(rep.index);
+  if (result.feedback) say += `，${result.feedback.feedback}`;
+  else if (!result.standard) say += '，動作再完整一點';
+  else if (standardStreak % 3 === 0) say += '，很好，保持';
+  speak(say);
 }
 
 // ---------- 標準動作（DTW 模板） ----------
@@ -633,7 +765,8 @@ function drawArrow(box, place) {
 }
 
 function showAngles(m) {
-  $('key-angle').textContent = `${Math.round(m.key)}°`;
+  const show = EXERCISES[exerciseId].showKey;
+  $('key-angle').textContent = `${Math.round(show ? show(m.key) : m.key)}°`;
   $('extra').innerHTML = Object.entries(m.extra)
     .map(([k, v]) => `<div><span>${k}</span><b>${Number.isFinite(v) ? Math.round(v) + '°' : '–'}</b></div>`)
     .join('');
@@ -748,6 +881,155 @@ function drawSkeleton(lms, activeSide) {
   }
 }
 
+// ---------- 首頁：今日課表與訓練紀錄 ----------
+
+const TARGET_STEP = { reps: 2, hold: 10 };
+const TARGET_RANGE = { reps: [2, 50], hold: [10, 180] };
+const kind = (id) => (EXERCISES[id].mode === 'hold' ? 'hold' : 'reps');
+const unit = (id) => (kind(id) === 'hold' ? '秒' : '下');
+
+function newPlan(items) {
+  return { items: items.map((it) => ({ ...it })), index: 0, session: { at: new Date().toISOString(), sets: [] } };
+}
+
+function renderCards() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('selection'));
+    if (Array.isArray(saved)) selection = saved.filter((it) => EXERCISES[it.id] && Number.isFinite(it.target));
+  } catch {
+    // 讀不到就從空的開始
+  }
+  $('cards').innerHTML = Object.entries(EXERCISES)
+    .map(
+      ([id, ex]) => `
+      <div class="card-wrap" data-exercise="${id}">
+        <button class="card" aria-pressed="false">
+          <span class="card-media">
+            <img src="${ex.card.image}" alt="${ex.name}示範照片">
+            <span class="chip">${ex.card.chip}</span>
+            <span class="pick"></span>
+          </span>
+          <span class="card-title">${ex.name}</span>
+          <span class="card-desc">${ex.card.desc}</span>
+        </button>
+        <div class="target" hidden>
+          <span>目標</span>
+          <button class="step" data-d="-1" aria-label="減少">−</button>
+          <b class="target-value"></b>
+          <button class="step" data-d="1" aria-label="增加">＋</button>
+        </div>
+      </div>`,
+    )
+    .join('');
+  for (const wrap of document.querySelectorAll('.card-wrap')) {
+    const id = wrap.dataset.exercise;
+    wrap.querySelector('.card').addEventListener('click', () => {
+      const i = selection.findIndex((it) => it.id === id);
+      if (i >= 0) selection.splice(i, 1);
+      else selection.push({ id, target: EXERCISES[id].target });
+      renderSelection();
+    });
+    for (const b of wrap.querySelectorAll('.step')) {
+      b.addEventListener('click', () => {
+        const it = selection.find((x) => x.id === id);
+        if (!it) return;
+        const [lo, hi] = TARGET_RANGE[kind(id)];
+        it.target = Math.min(hi, Math.max(lo, it.target + Number(b.dataset.d) * TARGET_STEP[kind(id)]));
+        renderSelection();
+      });
+    }
+  }
+  renderSelection();
+}
+
+function renderSelection() {
+  for (const wrap of document.querySelectorAll('.card-wrap')) {
+    const id = wrap.dataset.exercise;
+    const i = selection.findIndex((it) => it.id === id);
+    const on = i >= 0;
+    wrap.classList.toggle('selected', on);
+    wrap.querySelector('.card').setAttribute('aria-pressed', String(on));
+    wrap.querySelector('.pick').textContent = on ? `✓ 第 ${i + 1} 個` : '';
+    wrap.querySelector('.target').hidden = !on;
+    if (on) wrap.querySelector('.target-value').textContent = `${selection[i].target} ${unit(id)}`;
+  }
+  const btn = $('start-plan');
+  btn.disabled = selection.length === 0;
+  btn.textContent = selection.length
+    ? `開始訓練：${selection.map((it) => EXERCISES[it.id].name).join('、')}`
+    : '選好動作就可以開始';
+  try {
+    localStorage.setItem('selection', JSON.stringify(selection));
+  } catch {
+    // 存不了就算了，只是下次要重選
+  }
+}
+
+// 訓練紀錄存在這支手機的瀏覽器（localStorage），不會上傳；之後若加上帳號，可以改存到雲端（見 docs/plan.md）
+function loadHistory() {
+  try {
+    const h = JSON.parse(localStorage.getItem(HISTORY_KEY));
+    return Array.isArray(h) ? h : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSession(session) {
+  if (!session.sets.length) return;
+  const h = loadHistory().filter((x) => x.at !== session.at);
+  h.unshift(session);
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, HISTORY_MAX)));
+  } catch (err) {
+    console.warn('無法儲存訓練紀錄', err);
+  }
+}
+
+const fmtTime = (iso) => {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+// 一次訓練的一句話摘要：做了哪些動作、標準比例
+function sessionLine(session) {
+  const names = [...new Set(session.sets.map((r) => r.name))].join('、');
+  const reps = session.sets.filter((r) => r.mode !== 'hold');
+  const total = reps.reduce((n, r) => n + r.count, 0);
+  const std = reps.reduce((n, r) => n + r.standard, 0);
+  return total ? `${names} · 標準 ${std}/${total} 下` : names;
+}
+
+function renderHistory() {
+  const h = loadHistory();
+  $('history').hidden = h.length === 0;
+  $('history-list').innerHTML = h
+    .map((s, i) => `<li><button class="history-item" data-i="${i}"><span>${fmtTime(s.at)}</span><span>${esc(sessionLine(s))}</span></button></li>`)
+    .join('');
+  for (const b of document.querySelectorAll('.history-item')) {
+    b.addEventListener('click', () => {
+      reportSession = h[Number(b.dataset.i)];
+      location.hash = 'report';
+    });
+  }
+}
+
+// 總結頁：這次訓練每個動作做得如何、哪裡要改
+function showReport(session) {
+  const reps = session.sets.filter((r) => r.mode !== 'hold');
+  const total = reps.reduce((n, r) => n + r.count, 0);
+  const std = reps.reduce((n, r) => n + r.standard, 0);
+  const head = [`<div class="report-date">${fmtTime(session.at)}</div>`, `<div class="sum-big">完成 ${session.sets.length} 組動作</div>`];
+  if (total) head.push(`<div>總共 ${total} 下，標準 ${std} 下（${Math.round((100 * std) / total)}%）</div>`);
+  $('report').innerHTML =
+    `<div class="sum-head">${head.join('')}</div>` +
+    session.sets.map((r) => `<section class="set">${setHTML(r, { title: true })}</section>`).join('') +
+    '<p class="report-note">這份紀錄只存在這支手機的瀏覽器裡，不會上傳；回到首頁的「訓練紀錄」可以再打開。</p>';
+  showPage('report');
+  $('report').scrollTop = 0;
+}
+
 // ---------- 事件 ----------
 
 // 手機橫放時網址列會佔掉很多高度，支援的瀏覽器（Android Chrome）進入全螢幕；iPhone Safari 不支援就略過
@@ -760,16 +1042,23 @@ function exitFullscreen() {
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
 }
 
-document.querySelectorAll('.card').forEach((card) =>
-  card.addEventListener('click', () => {
-    enterFullscreen();
-    unlockSpeech();
-    location.hash = card.dataset.exercise;
-    // 在點擊事件裡直接開鏡頭，iOS 才會允許
-    showWorkout(card.dataset.exercise);
-    openSource('camera');
-  }),
-);
+$('start-plan').addEventListener('click', () => {
+  if (!selection.length) return;
+  enterFullscreen();
+  unlockSpeech();
+  plan = newPlan(selection);
+  const id = plan.items[0].id;
+  // 先設定好再改網址，route() 看到同一個動作就不會重設
+  stopAll();
+  setupExercise(id);
+  showPage('workout');
+  location.hash = id;
+  // 在點擊事件裡直接開鏡頭，iOS 才會允許
+  openSource('camera');
+});
+$('report-back').addEventListener('click', () => {
+  location.hash = '';
+});
 $('back').addEventListener('click', () => {
   exitFullscreen();
   location.hash = '';
@@ -786,15 +1075,50 @@ $('file').addEventListener('change', (e) => {
 });
 $('go').addEventListener('click', () => {
   if (phase === 'done') {
-    startSet();
-    if (fromFile) {
-      video.currentTime = 0;
-      video.play();
-    }
+    if (nextItem()) goNext();
+    else finishPlan();
   } else if (phase === 'ready' || phase === 'active') {
     finishSet();
   }
 });
+$('redo').addEventListener('click', () => {
+  if (phase !== 'done') return;
+  startSet();
+  restartFile();
+});
+
+function restartFile() {
+  if (fromFile) {
+    video.currentTime = 0;
+    video.play();
+  }
+}
+
+// 課表的下一個動作：鏡頭繼續開著，只換動作
+function goNext() {
+  plan.index += 1;
+  const id = plan.items[plan.index].id;
+  setupExercise(id);
+  location.hash = id;
+  startSet();
+  restartFile();
+  checkOrientation();
+  const ex = EXERCISES[id];
+  flashCenter(ex.name, 1500, true);
+  speak(`${ex.name}，${ex.readyHint}`);
+}
+
+// 課表做完：到總結頁
+function finishPlan() {
+  const session = plan.session;
+  saveSession(session);
+  stopAll();
+  plan = null;
+  exerciseId = null;
+  reportSession = session;
+  location.hash = 'report';
+  showReport(session);
+}
 $('record').addEventListener('click', () => {
   if (recording) {
     stopRecording();
@@ -827,6 +1151,7 @@ loadModel().catch((err) => {
   console.error(err);
   $('model-status').textContent = `模型載入失敗：${err.message}`;
 });
+renderCards();
 route();
 $('voice').addEventListener('change', () => {
   speechUnlocked = false;

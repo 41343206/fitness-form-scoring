@@ -16,7 +16,9 @@ export function ruleScore(rules, rep) {
   const parts = rules.map((r) => {
     const value = r.value(rep);
     const fraction = linear(value, r.full, r.zero);
-    return { id: r.id, label: r.label, feedback: r.feedback, weight: r.weight, value, fraction, points: r.weight * fraction };
+    // feedback 可以依這一下的資料決定（例如伏地挺身分塌腰或翹臀）
+    const feedback = typeof r.feedback === 'function' ? r.feedback(rep) : r.feedback;
+    return { id: r.id, label: r.label, feedback, tip: r.tip, weight: r.weight, value, fraction, points: r.weight * fraction };
   });
   const total = parts.reduce((s, p) => s + p.weight, 0);
   const score = (100 * parts.reduce((s, p) => s + p.points, 0)) / total;
@@ -46,21 +48,31 @@ export function scoreRep(ex, rep, templates, { alpha = 0.6 } = {}) {
   };
 }
 
-// 一組的總結：平均分數、標準／不標準次數、不標準的原因、最常出現的錯誤
+// 一組的總結：平均分數、標準／不標準次數、不標準的原因、最常出現的錯誤。
+// issues 每一項是一個問題（哪個部位、幾次、最常講的那句提示、教練說明），依次數排序，結果頁用來說明「哪裡要改」。
 export function summarize(results) {
   if (results.length === 0) return { count: 0, avg: null, standard: 0, nonStandard: 0, issues: [], topIssue: null };
   const avg = Math.round(results.reduce((s, r) => s + r.score, 0) / results.length);
-  const counts = {};
-  for (const r of results) if (r.feedback) counts[r.feedback.id] = (counts[r.feedback.id] ?? 0) + 1;
-  const topId = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-  const topIssue = topId ? { ...results.find((r) => r.feedback?.id === topId).feedback, times: counts[topId] } : null;
   const standard = results.filter((r) => r.standard).length;
-  // 不標準的原因：有提示的用那條規則；沒有提示但總分不到門檻的算「整體不夠標準」
-  const reasons = {};
+  // 不標準的原因：有提示的用那條規則；沒有提示但總分不到門檻的算「整體不夠標準」（多半是動作曲線和標準動作差比較多）
+  const byId = {};
   for (const r of results.filter((r) => !r.standard)) {
-    const label = r.feedback?.label ?? '整體';
-    reasons[label] = (reasons[label] ?? 0) + 1;
+    const f = r.feedback;
+    const id = f?.id ?? 'overall';
+    const it = (byId[id] ??= {
+      id,
+      label: f?.label ?? '整體',
+      tip: f?.tip ?? '各項規則都差一點，整體動作和標準動作的曲線還有差距。放慢速度，照著動作要領一下一下做完整。',
+      times: 0,
+      texts: {},
+    });
+    it.times += 1;
+    const text = f?.feedback ?? '動作再完整一點';
+    it.texts[text] = (it.texts[text] ?? 0) + 1;
   }
-  const issues = Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([label, times]) => ({ label, times }));
+  const issues = Object.values(byId)
+    .sort((a, b) => b.times - a.times)
+    .map(({ texts, ...it }) => ({ ...it, feedback: Object.keys(texts).sort((a, b) => texts[b] - texts[a])[0] }));
+  const topIssue = issues.find((i) => i.id !== 'overall') ?? null;
   return { count: results.length, avg, standard, nonStandard: results.length - standard, issues, topIssue };
 }
